@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /
+Disallow: /app
+Disallow: /ops
+Disallow: /login
+Disallow: /claim
+Disallow: /auth
+Disallow: /booking
+Disallow: /offer
+Disallow: /checkout
+Disallow: /payment
+Disallow: /access
+Disallow: /dev

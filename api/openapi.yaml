@@ -1,0 +1,351 @@
+openapi: 3.1.0
+info:
+  title: WantMyTime API
+  version: 0.2.0
+  description: PostgreSQL-backed identity, profiles, availability, local booking/offer flows and MFA-gated operations. Live payment collection remains disabled.
+servers:
+  - url: http://127.0.0.1:8081
+components:
+  securitySchemes:
+    asideSession:
+      type: apiKey
+      in: cookie
+      name: aside_session
+security: [{ asideSession: [] }]
+paths:
+  /health:
+    get:
+      security: []
+      responses:
+        '200': { description: PostgreSQL connectivity is healthy }
+        '503': { description: Database unavailable }
+  /api/v1/auth/challenges:
+    post:
+      security: []
+      responses:
+        '202': { description: Verification email sent when a provider is configured }
+        '422': { description: Invalid email or purpose }
+        '429': { description: Per-email issuance limit reached }
+        '503': { description: Email delivery unavailable; no code sent }
+  /api/v1/auth/challenges/{id}/verify:
+    post:
+      security: []
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: Email verified; login creates an account session while booking, offer and access purposes create resource-scoped guest sessions }
+        '400': { description: Invalid or expired code }
+        '503': { description: Identity service unavailable; no session created }
+  /api/v1/access/challenges:
+    post:
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties: { email: { type: string, format: email } }
+      responses:
+        '202': { description: Verification challenge created without disclosing whether bookings exist }
+        '422': { description: Invalid email }
+        '503': { description: Email delivery unavailable; no code sent }
+  /api/v1/auth/logout:
+    post:
+      responses: { '200': { description: Session revoked } }
+  /api/v1/me:
+    get:
+      responses: { '200': { description: Current authenticated identity and capabilities }, '401': { description: Verified identity required } }
+  /api/v1/me/sessions:
+    get:
+      responses: { '200': { description: Current account active session metadata without tokens } }
+  /api/v1/me/sessions/revoke-others:
+    post:
+      responses: { '200': { description: Other sessions revoked while keeping the current session active } }
+  /api/v1/me/settlements:
+    get:
+      responses: { '200': { description: Cursor-paginated seller-owned allocations and independently verified provider settlement evidence, with next_cursor } }
+  /api/v1/me/settlements/{id}:
+    get:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: Seller-scoped settlement detail }, '404': { description: Not owned by current seller } }
+  /api/v1/people/{handle}:
+    get:
+      security: []
+      parameters: [{ name: handle, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Public seller profile with optional allowlisted social profile link }, '404': { description: Unavailable profile } }
+  /api/v1/people/{handle}/avatar:
+    get:
+      security: []
+      parameters: [{ name: handle, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Public metadata-stripped seller image }, '404': { description: No image or unavailable profile } }
+  /og/{handle}/{version}.svg:
+    get:
+      security: []
+      parameters:
+        - { name: handle, in: path, required: true, schema: { type: string } }
+        - { name: version, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses: { '200': { description: Sanitized fixed-size cacheable SVG social preview }, '404': { description: Preview unavailable } }
+  /api/v1/people/{handle}/slots:
+    get:
+      security: []
+      parameters: [{ name: handle, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Timezone-aware available slots }, '404': { description: Unavailable profile } }
+  /api/v1/me/link:
+    get:
+      responses: { '200': { description: Current user's seller profile and optional validated social identity link }, '401': { description: Verified identity required }, '404': { description: No seller profile claimed } }
+    post:
+      summary: Claim and publish a seller profile for the authenticated user
+      responses: { '201': { description: Profile created; payment readiness remains server-controlled }, '401': { description: Verified identity required }, '409': { description: Handle taken, or this account already has a link (PROFILE_EXISTS) } }
+    patch:
+      summary: Update the authenticated user's seller profile and create a pricing version
+      responses: { '200': { description: Profile updated }, '401': { description: Verified identity required }, '404': { description: Profile not found } }
+  /api/v1/me/avatar:
+    put:
+      summary: Upload a bounded PNG or JPEG seller image; metadata is discarded
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { type: object, required: [avatar], properties: { avatar: { type: string, format: binary } } }
+      responses: { '200': { description: Re-encoded image saved with its exact avatar_version }, '413': { description: File exceeds upload limit }, '422': { description: Unsupported image or dimensions } }
+    delete:
+      summary: Remove seller image
+      responses: { '204': { description: Image removed } }
+  /api/v1/me/availability:
+    get:
+      responses: { '200': { description: Weekly availability and booking constraints }, '401': { description: Verified identity required } }
+    put:
+      responses: { '200': { description: Availability saved }, '422': { description: Invalid timezone, windows or constraints } }
+  /api/v1/quotes:
+    post:
+      parameters: [{ name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 16, maxLength: 128 } }]
+      responses: { '201': { description: Time held with a short expiry for an account or verified scoped booking session }, '409': { description: Slot unavailable }, '401': { description: Verified email session required } }
+  /api/v1/quotes/{id}:
+    get:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Participant-scoped quote with booking id and payment state when converted }, '404': { description: Quote unavailable } }
+  /api/v1/dev/quotes/{id}/simulate-payment:
+    post:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '201': { description: Clearly synthetic local booking; no money collected }, '404': { description: Route disabled outside local simulator } }
+  /api/v1/quotes/{id}/checkout:
+    post:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: Existing or initialized hosted checkout (one provider reference per quote makes retries idempotent; the time hold is extended before redirect) for the participant's quote }, '401': { description: Verified buyer required }, '409': { description: Quote or seller unavailable }, '503': { description: Provider controls, credentials or approved economics unavailable } }
+  /api/v1/quotes/{id}/verify-payment:
+    post:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reference]
+              properties: { reference: { type: string, maxLength: 128 } }
+      responses: { '200': { description: Provider-verified pending, review or paid result }, '401': { description: Verified buyer required }, '404': { description: Payment does not belong to this buyer and quote } }
+  /api/v1/offers:
+    post:
+      parameters: [{ name: Idempotency-Key, in: header, required: true, schema: { type: string } }]
+      responses: { '201': { description: Offer saved for seller response and added to the verified buyer's scoped guest session or account }, '401': { description: Verified email session required } }
+  /api/v1/me/offers:
+    get:
+      responses: { '200': { description: Cursor-paginated sent and received offers scoped to current user, with next_cursor } }
+  /api/v1/offers/{id}/checkout:
+    post:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { name: Idempotency-Key, in: header, required: true, schema: { type: string } }]
+      responses: { '201': { description: Agreed offer time hold for an account or scoped guest buyer }, '503': { description: Simulator and provider checkout are both unavailable } }
+  /api/v1/me/bookings:
+    get:
+      responses: { '200': { description: Cursor-paginated account participant bookings or only records granted to a verified guest session, with next_cursor } }
+  /api/v1/bookings/{id}:
+    get:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Private participant booking and meeting details }, '404': { description: Not a participant or booking unavailable } }
+  /api/v1/bookings/{id}/meeting:
+    patch:
+      responses: { '200': { description: Meeting URL securely stored for seller's booking }, '422': { description: Invalid HTTPS URL } }
+  /api/v1/bookings/{id}/receipt:
+    get:
+      responses: { '200': { description: Participant-scoped receipt for verified payment allocation }, '404': { description: No verified receipt or booking unavailable } }
+  /api/v1/bookings/{id}/calendar:
+    get:
+      responses: { '200': { description: Participant-authorized iCalendar attachment } }
+  /api/v1/bookings/{id}/reschedules:
+    get:
+      responses: { '200': { description: Participant-scoped reschedule history }, '404': { description: Booking unavailable } }
+    post:
+      responses: { '201': { description: Proposed replacement time; original reservation remains active }, '409': { description: Booking or proposed slot unavailable } }
+  /api/v1/reschedules/{id}/accept:
+    post:
+      responses: { '200': { description: Replacement slot atomically reserved and calendar sequence advanced }, '409': { description: Request expired or replacement slot unavailable } }
+  /api/v1/reschedules/{id}/decline:
+    post:
+      responses: { '200': { description: Request declined; original reservation remains active } }
+  /api/v1/bookings/{id}/issue:
+    post:
+      responses: { '201': { description: Participant issue report saved } }
+  /api/v1/bookings/{id}/cancellation:
+    post:
+      responses: { '201': { description: Cancellation request recorded; booking and payment are unchanged }, '409': { description: Cancellation request already open } }
+  /api/v1/bookings/{id}/completion:
+    post:
+      responses: { '200': { description: Participant completion signal saved } }
+  /api/v1/webhooks/paystack:
+    post:
+      security: []
+      responses: { '200': { description: Signed provider event durably accepted or duplicate acknowledged }, '400': { description: Invalid provider event }, '401': { description: Invalid provider signature }, '503': { description: Event not acknowledged because durable storage or controls are unavailable } }
+  /api/v1/ops/session:
+    post:
+      responses: { '200': { description: TOTP verified for the current session }, '401': { description: Invalid authenticator code }, '429': { description: Temporary lockout after repeated incorrect codes } }
+  /api/v1/ops/overview:
+    get:
+      responses: { '200': { description: MFA-verified operational overview }, '401': { description: MFA required }, '403': { description: Missing operations permission } }
+  /api/v1/ops/growth:
+    get:
+      responses: { '200': { description: Seven-day privacy-limited events and verified paid buyer-to-seller cohort counts with observation limits }, '401': { description: MFA required }, '403': { description: Missing operations permission } }
+  /api/v1/ops/system:
+    get:
+      responses: { '200': { description: MFA-gated email outbox and provider event worker health, checkout pause state, and payment enablement status }, '503': { description: System status unavailable } }
+  /api/v1/ops/provider-events:
+    get:
+      responses: { '200': { description: MFA-gated minimized provider event inbox } }
+  /api/v1/ops/provider-events/{id}/retry:
+    post:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: Audited retry queued for a fresh provider verification }, '409': { description: Event is not in a failed state } }
+  /api/v1/ops/payments:
+    get:
+      responses: { '200': { description: MFA-gated provider payment attempts; collection enablement status is explicit } }
+  /api/v1/ops/payments/{id}:
+    get:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: Provider attempt, allocation and settlement state }, '404': { description: Payment attempt not found } }
+  /api/v1/ops/settlements:
+    get:
+      responses: { '200': { description: MFA-gated settlement allocation and confirmation records } }
+  /api/v1/ops/settlements/import:
+    post:
+      responses: { '200': { description: Audited provisional CSV matching; requires ops:settlement:import and never marks a payout settled }, '403': { description: Missing settlement import permission }, '422': { description: Invalid CSV or row } }
+  /api/v1/ops/settlements/import-rows:
+    get:
+      responses: { '200': { description: Cursor-paginated provisional, unmatched and mismatched imported rows for review } }
+  /api/v1/ops/provider-cases:
+    get:
+      responses: { '200': { description: Cursor-paginated MFA-gated dispute and refund notifications with provider deadlines and match status } }
+  /api/v1/ops/exceptions:
+    get:
+      responses: { '200': { description: Open objective provider/payment exceptions } }
+  /api/v1/ops/exceptions/{id}:
+    get:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: Exception detail and retained safe evidence }, '404': { description: Exception not found } }
+  /api/v1/ops/exceptions/{id}/export:
+    post:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: Audited minimized JSON evidence bundle; excludes raw webhook body and participant contact data }, '404': { description: Exception not found }, '503': { description: Export is not returned unless its audit event is recorded } }
+  /api/v1/ops/exceptions/{id}/resolve:
+    post:
+      responses: { '200': { description: Audited review resolution; does not alter payment or booking state }, '403': { description: Permission denied } }
+  /api/v1/ops/people:
+    get:
+      responses: { '200': { description: MFA-verified people list } }
+  /api/v1/ops/people/{id}:
+    get:
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses: { '200': { description: MFA-verified account detail, including verified email and seller-link readiness }, '404': { description: Account not found } }
+  /api/v1/ops/bookings:
+    get:
+      responses: { '200': { description: MFA-verified bookings list } }
+  /api/v1/ops/bookings/{id}:
+    get:
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses: { '200': { description: MFA-verified booking operational detail }, '404': { description: Booking not found } }
+  /api/v1/ops/offers:
+    get:
+      responses: { '200': { description: MFA-verified offers list } }
+  /api/v1/ops/meetings/overdue:
+    get:
+      responses: { '200': { description: Overdue private meeting link queue } }
+  /api/v1/ops/audit:
+    get:
+      responses: { '200': { description: Append-only audit events } }
+  /api/v1/ops/people/{id}/restrict:
+    post:
+      responses: { '200': { description: Account restricted, sessions revoked and action audited }, '403': { description: Permission denied } }
+  /api/v1/ops/people/{id}/revoke-sessions:
+    post:
+      responses: { '200': { description: Sessions revoked and action audited }, '403': { description: Permission denied } }
+  /api/v1/ops/bookings/{id}/resolve-issue:
+    post:
+      responses: { '200': { description: Issue resolution recorded and audited }, '403': { description: Permission denied } }
+  /api/v1/ops/cancellations:
+    get:
+      responses: { '200': { description: MFA-gated open cancellation requests } }
+  /api/v1/ops/cancellations/{id}/resolve:
+    post:
+      responses: { '200': { description: Review outcome recorded and audited; no payment or booking state is changed }, '403': { description: Permission denied } }
+  /api/v1/analytics/events:
+    post:
+      security: []
+      responses: { '204': { description: Privacy-limited client event stored; endpoint cannot write financial events }, '422': { description: Event not permitted } }
+  /api/v1/runtime:
+    get:
+      security: []
+      responses: { '200': { description: Whether the local simulator or provider checkout is enabled } }
+  /api/v1/handles/{handle}/availability:
+    get:
+      security: []
+      parameters: [{ name: handle, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Whether the handle is valid and unclaimed } }
+  /api/v1/me/availability/overrides/{date}:
+    put:
+      parameters: [{ name: date, in: path, required: true, schema: { type: string, format: date } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { closed: { type: boolean }, windows: { type: array, items: { type: object, properties: { weekday: { type: integer }, start: { type: string, example: '09:00' }, end: { type: string, example: '12:00' } } } } } }
+      responses: { '200': { description: Date closed or given replacement hours }, '422': { description: Invalid date, range or hours } }
+    delete:
+      parameters: [{ name: date, in: path, required: true, schema: { type: string, format: date } }]
+      responses: { '200': { description: Weekly hours restored for that date } }
+  /api/v1/offers/{id}:
+    get:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: Participant-scoped offer with latest amount and version }, '404': { description: Offer unavailable } }
+  /api/v1/offers/{id}/accept:
+    post:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [version], properties: { version: { type: integer } } } } } }
+      responses: { '200': { description: Agreement saved; no payment taken }, '409': { description: Stale version or action not allowed in this state } }
+  /api/v1/offers/{id}/counter:
+    post:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [version, amount_minor], properties: { version: { type: integer }, amount_minor: { type: integer, minimum: 100, maximum: 100000000 } } } } } }
+      responses: { '200': { description: One seller counteroffer saved }, '409': { description: Counter unavailable }, '422': { description: Invalid amount } }
+  /api/v1/offers/{id}/decline:
+    post:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: Offer declined }, '409': { description: Action not allowed in this state } }
+  /api/v1/offers/{id}/withdraw:
+    post:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: Offer withdrawn }, '409': { description: Action not allowed in this state } }
+  /api/v1/bookings:
+    post:
+      deprecated: true
+      responses: { '503': { description: Direct booking creation is disabled; use quotes and checkout } }
+  /api/v1/ops/people/{id}/payout-readiness:
+    post:
+      summary: Mark a seller ready (or not) for paid bookings and record their Paystack subaccount; requires ops:seller:approve and recent MFA
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [ready, reason], properties: { ready: { type: boolean }, subaccount_code: { type: string, pattern: '^ACCT_[A-Za-z0-9]{6,40}$' }, reason: { type: string, minLength: 8, maxLength: 300 } } }
+      responses: { '200': { description: Readiness updated and audited }, '403': { description: Permission denied }, '404': { description: No seller link }, '422': { description: Missing reason or subaccount } }

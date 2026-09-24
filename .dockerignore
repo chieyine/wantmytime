@@ -1,0 +1,13 @@
+# Keep host-built artefacts (for example macOS native binaries in node_modules)
+# out of the Linux image build context.
+**/node_modules
+**/.svelte-kit
+apps/web/build
+**/dist
+**/coverage
+.git
+.env
+.env.*
+!.env.example
+*.db
+*.db-*

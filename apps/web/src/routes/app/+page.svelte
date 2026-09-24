@@ -1,0 +1,79 @@
+<script lang="ts">
+	import { onMount } from 'svelte';
+	import { env } from '$env/dynamic/public';
+	import { api } from '$lib/api';
+	import { formatNaira } from '$lib/money';
+	let { data } = $props();
+	let account = $derived(data.account as { name: string; email: string; handle: string });
+	let copied = $state(false);
+	let copyError = $state('');
+	type Booking = { id: string; seller: string; buyer: string; duration_minutes: number; starts_at: string; state: string; payment_state: string };
+	type Offer = { id: string; seller: string; buyer_name: string; amount_minor: string; state: string; role: 'seller' | 'buyer'; expires_at: string };
+	let bookings = $state<Booking[]>([]);
+	let offers = $state<Offer[]>([]);
+	let windowCount = $state<number | null>(null);
+	let profileReady = $state<boolean | null>(null);
+	let profilePaused = $state(false);
+	let collectionEnabled = $state<boolean | null>(null);
+	let overviewLoading = $state(true);
+	let overviewError = $state(false);
+	let link = $derived(account.handle ? `${(env.PUBLIC_APP_ORIGIN || (typeof window === 'undefined' ? '' : window.location.origin)).replace(/\/$/, '')}/${account.handle}` : 'No link claimed yet');
+	let nextBooking = $derived(bookings.filter((booking) => booking.seller === account.handle && new Date(booking.starts_at).getTime() >= Date.now() && booking.state === 'confirmed').sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime())[0]);
+	let pendingOffers = $derived(offers.filter((offer) => offer.role === 'seller' && offer.state === 'pending' && new Date(offer.expires_at).getTime() > Date.now()));
+	let nextOffer = $derived([...pendingOffers].sort((a, b) => new Date(a.expires_at).getTime() - new Date(b.expires_at).getTime())[0]);
+	let nextSetupHref = $derived(!account.handle ? '/claim' : windowCount === 0 ? '/app/availability' : profilePaused ? '/app/link' : profileReady === false ? '/app/onboarding' : collectionEnabled === false ? '/app/settings/payouts' : '/app/link');
+	let nextSetupLabel = $derived(!account.handle ? 'CLAIM YOUR LINK' : windowCount === 0 ? 'SET YOUR HOURS' : profilePaused ? 'RESUME YOUR LINK' : profileReady === false ? 'COMPLETE PROFILE SETUP' : collectionEnabled === false ? 'VIEW PAYMENT READINESS' : 'MANAGE YOUR LINK');
+	onMount(async () => {
+		if (!account.handle) { overviewLoading = false; return; }
+		const results = await Promise.allSettled([
+			api<{ ready: boolean; paused: boolean }>('/api/v1/me/link'),
+			api<{ windows: unknown[] }>('/api/v1/me/availability'),
+			api<{ bookings: Booking[] }>('/api/v1/me/bookings'),
+			api<{ offers: Offer[] }>('/api/v1/me/offers'),
+			api<{ payment_collection_enabled: boolean }>('/api/v1/me/settlements')
+		]);
+		if (results[0].status === 'fulfilled') { profileReady = results[0].value.ready; profilePaused = results[0].value.paused; }
+		if (results[1].status === 'fulfilled') windowCount = results[1].value.windows.length;
+		if (results[2].status === 'fulfilled') bookings = results[2].value.bookings;
+		if (results[3].status === 'fulfilled') offers = results[3].value.offers;
+		if (results[4].status === 'fulfilled') collectionEnabled = results[4].value.payment_collection_enabled;
+		overviewError = results.some((result) => result.status === 'rejected');
+		overviewLoading = false;
+	});
+	const dateLabel = (value: string) => new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+	async function copy() {
+		copyError = '';
+		try {
+			await navigator.clipboard.writeText(link);
+			copied = true;
+			window.setTimeout(() => copied = false, 1500);
+		} catch {
+			copyError = 'Copy was unavailable. Select the link to copy it.';
+		}
+	}
+</script>
+
+<svelte:head><title>Your WantMyTime — Overview</title></svelte:head>
+
+<section class="workspace-overview">
+	<header class="workspace-overview-head">
+		<p class="workspace-kicker">OVERVIEW <span>01 / 08</span></p>
+		<h1>YOUR TIME,<br /><em>{account.name?.trim().split(' ')[0] || 'YOUR SPACE'}.</em></h1>
+		<p>One place to manage the link, the hours and the conversations you choose to take.</p>
+	</header>
+	<section class="workspace-link-panel" aria-labelledby="workspace-link-title">
+		<div><p class="workspace-kicker">YOUR PUBLIC LINK <span>01</span></p><h2 id="workspace-link-title">{link}</h2></div>
+		<div class="workspace-link-actions">{#if account.handle}<button type="button" class="workspace-action" onclick={copy}>{copied ? 'COPIED' : 'COPY LINK'} <span aria-hidden="true">↗</span></button><a class="workspace-action workspace-action-outline" href={`/${account.handle}`}>VIEW PAGE <span aria-hidden="true">↗</span></a>{:else}<a class="workspace-action" href="/claim">CLAIM YOUR LINK <span aria-hidden="true">↗</span></a>{/if}</div>
+		{#if copyError}<p class="workspace-inline-error" role="alert">{copyError}</p>{/if}
+	</section>
+	{#if overviewError}<p class="notice notice-warning workspace-overview-warning" role="status">Some live details could not be loaded. Open a section to see its latest records.</p>{/if}
+	<div class="workspace-overview-grid">
+		<section class="workspace-readiness" aria-labelledby="workspace-readiness-title">
+			<p class="workspace-kicker">GET READY TO BOOK <span>02</span></p>
+			<h2 id="workspace-readiness-title">{profileReady && !profilePaused && collectionEnabled && (windowCount ?? 0) > 0 ? 'CORE CHECKS COMPLETE.' : 'OPEN WHEN YOU ARE READY.'}</h2>
+			<ol><li><span>01</span><span>Public link <b>{account.handle ? 'Claimed' : 'To do'}</b></span></li><li><span>02</span><span>Weekly hours <b>{!account.handle ? 'After link' : windowCount === null ? (overviewLoading ? 'Loading' : 'Unavailable') : windowCount > 0 ? `${windowCount} ${windowCount === 1 ? 'window' : 'windows'}` : 'To do'}</b></span></li><li><span>03</span><span>Profile checks <b>{!account.handle ? 'After link' : profileReady === null ? (overviewLoading ? 'Loading' : 'Unavailable') : profileReady ? (profilePaused ? 'Paused by you' : 'Ready') : 'Not approved'}</b></span></li><li><span>04</span><span>Live payment collection <b>{!account.handle ? 'After link' : collectionEnabled === null ? (overviewLoading ? 'Loading' : 'Unavailable') : collectionEnabled ? 'Enabled' : 'Disabled'}</b></span></li></ol>
+			<a href={nextSetupHref}>{nextSetupLabel} <span aria-hidden="true">↗</span></a>
+		</section>
+		<aside class="workspace-side-note"><p class="workspace-kicker">UP NEXT <span>03</span></p><a href={nextBooking ? `/app/bookings/${encodeURIComponent(nextBooking.id)}` : '/app/bookings'}><span>NEXT BOOKING</span><strong>{overviewLoading ? 'Loading your bookings…' : nextBooking ? `${nextBooking.buyer} · ${dateLabel(nextBooking.starts_at)}` : 'No upcoming booking in recent records'}</strong><b aria-hidden="true">↗</b></a><a href={nextOffer ? `/app/offers/${encodeURIComponent(nextOffer.id)}` : '/app/offers'}><span>OFFERS TO ANSWER</span><strong>{overviewLoading ? 'Loading your offers…' : nextOffer ? `${nextOffer.buyer_name} · ${formatNaira(Number(nextOffer.amount_minor))}` : 'No pending offer in recent records'}</strong><b aria-hidden="true">↗</b></a><div><span>PAYMENT STATUS</span><p>{collectionEnabled === null ? 'Checking provider availability.' : collectionEnabled ? 'Live payment collection is enabled by provider configuration.' : 'Live payment collection remains disabled until provider setup is approved.'}</p><a href="/app/settings/payouts">VIEW READINESS ↗</a></div></aside>
+	</div>
+</section>
