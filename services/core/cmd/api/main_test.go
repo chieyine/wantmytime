@@ -21,7 +21,7 @@ func TestValidHandle(t *testing.T) {
 			t.Errorf("expected %q valid", h)
 		}
 	}
-	bad := []string{"api", "a", "-name", "name-", "two--hyphens", "UPPER", "with space", "a_underscore"}
+	bad := []string{"api", "a", "-name", "name-", "two--hyphens", "UPPER", "with space", "a_underscore", "book", "verify", "unsubscribe", "acceptable-use"}
 	for _, h := range bad {
 		if validHandle(h) {
 			t.Errorf("expected %q invalid", h)

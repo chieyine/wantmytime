@@ -27,7 +27,14 @@ const reserved = new Set([
 	'settings',
 	'support',
 	'www',
-	'assets'
+	'assets',
+	// Top-level pages of the site itself.
+	'book',
+	'verify',
+	'acceptable-use',
+	'unsubscribe',
+	'sitemap',
+	'robots'
 ]);
 
 export const handlePattern = '[a-zA-Z0-9]+(-[a-zA-Z0-9]+)*';

@@ -43,7 +43,8 @@ type Person struct {
 	ProviderCheckout bool   `json:"provider_checkout_enabled,omitempty"`
 }
 
-var reserved = map[string]bool{"api": true, "metrics": true, "status": true, "healthz": true, "app": true, "ops": true, "admin": true, "login": true, "claim": true, "help": true, "pricing": true, "terms": true, "privacy": true, "booking": true, "offer": true, "checkout": true, "payment": true, "auth": true, "r": true, "og": true, "access": true, "health": true, "dev": true, "settings": true, "support": true, "www": true, "assets": true}
+// reserved are words used by the site itself (keep in step with apps/web/src/lib/handle.ts).
+var reserved = map[string]bool{"api": true, "metrics": true, "status": true, "healthz": true, "app": true, "ops": true, "admin": true, "login": true, "claim": true, "help": true, "pricing": true, "terms": true, "privacy": true, "booking": true, "offer": true, "checkout": true, "payment": true, "auth": true, "r": true, "og": true, "access": true, "health": true, "dev": true, "settings": true, "support": true, "www": true, "assets": true, "book": true, "verify": true, "acceptable-use": true, "unsubscribe": true, "sitemap": true, "robots": true}
 
 func normalizeHandle(v string) string { return strings.ToLower(strings.TrimSpace(v)) }
 
