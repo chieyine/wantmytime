@@ -31,6 +31,7 @@ var exportSections = []struct{ name, sql string }{
 	{"account", `SELECT to_jsonb(t) FROM (SELECT u.id,i.normalized_identifier AS email,u.display_name,u.timezone,u.status,u.created_at FROM users u LEFT JOIN user_identities i ON i.user_id=u.id AND i.type='email' WHERE u.id=$1) t`},
 	{"sessions", `SELECT COALESCE(jsonb_agg(t ORDER BY t.created_at DESC),'[]') FROM (SELECT created_at,expires_at,revoked_at,CASE WHEN guest_scope IS NULL THEN 'account' ELSE 'booking access' END AS kind FROM sessions WHERE user_id=$1) t`},
 	{"seller_profile", `SELECT to_jsonb(t) FROM (SELECT handle,mode,publication_state,timezone,identity_url,minimum_notice_minutes,booking_horizon_days,buffer_minutes,paused,cancellation_policy,created_at,(avatar_mime IS NOT NULL) AS has_photo FROM seller_profiles WHERE id=$2) t`},
+	{"previous_links", `SELECT COALESCE(jsonb_agg(t ORDER BY t.created_at),'[]') FROM (SELECT old_handle,created_at FROM handle_redirects WHERE seller_id=$2) t`},
 	{"prices", `SELECT COALESCE(jsonb_agg(t ORDER BY t.created_at),'[]') FROM (SELECT currency,base_30_minor,durations,fee_basis_points,created_at FROM pricing_versions WHERE seller_id=$2) t`},
 	{"availability_weekly", `SELECT COALESCE(jsonb_agg(t ORDER BY t.weekday,t.local_start),'[]') FROM (SELECT weekday,local_start,local_end,timezone FROM availability_windows WHERE seller_id=$2) t`},
 	{"availability_changes", `SELECT COALESCE(jsonb_agg(t ORDER BY t.local_date),'[]') FROM (SELECT local_date,closed,replacement_windows FROM availability_overrides WHERE seller_id=$2) t`},
@@ -242,6 +243,13 @@ func (a *API) deleteAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	if handle != "" {
 		if _, err = tx.Exec(ctx, `INSERT INTO handle_holds(handle,held_until) VALUES($1,now()+make_interval(secs=>$2::float8)) ON CONFLICT(handle) DO UPDATE SET held_until=EXCLUDED.held_until`, handle, handleHoldPeriod.Seconds()); err != nil {
+			problem(w, 503, "DATABASE_ERROR", "Your account could not be deleted.")
+			return
+		}
+	}
+	// Earlier links stop forwarding and are held the same way.
+	if sellerID != nil {
+		if _, err = tx.Exec(ctx, `WITH gone AS (DELETE FROM handle_redirects WHERE seller_id=$1 RETURNING old_handle) INSERT INTO handle_holds(handle,held_until) SELECT old_handle,now()+make_interval(secs=>$2::float8) FROM gone ON CONFLICT(handle) DO UPDATE SET held_until=EXCLUDED.held_until`, *sellerID, handleHoldPeriod.Seconds()); err != nil {
 			problem(w, 503, "DATABASE_ERROR", "Your account could not be deleted.")
 			return
 		}

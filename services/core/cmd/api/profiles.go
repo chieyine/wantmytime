@@ -79,8 +79,13 @@ func (a *API) availability(w http.ResponseWriter, r *http.Request) {
 		jsonOut(w, 200, map[string]any{"handle": h, "available": false})
 		return
 	}
+	// A seller's own earlier link is free for them to go back to.
+	owner := ""
+	if u, err := a.currentUser(r); err == nil {
+		owner = u.ID
+	}
 	var taken bool
-	e := a.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM seller_profiles WHERE handle=$1) OR EXISTS(SELECT 1 FROM handle_holds WHERE handle=$1 AND held_until>now())`, h).Scan(&taken)
+	e := a.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM seller_profiles WHERE handle=$1) OR EXISTS(SELECT 1 FROM handle_holds WHERE handle=$1 AND held_until>now()) OR EXISTS(SELECT 1 FROM handle_redirects hr JOIN seller_profiles sp ON sp.id=hr.seller_id WHERE hr.old_handle=$1 AND sp.user_id::text IS DISTINCT FROM NULLIF($2,''))`, h, owner).Scan(&taken)
 	if e != nil {
 		problem(w, 503, "DATABASE_ERROR", "Availability could not be checked.")
 		return
@@ -94,6 +99,10 @@ func (a *API) publicPerson(w http.ResponseWriter, r *http.Request) {
 	var sellerID, policy string
 	e := a.db.QueryRow(r.Context(), `SELECT sp.handle,u.display_name,COALESCE(sp.identity_url,''),sp.mode,COALESCE(pv.base_30_minor,0),COALESCE(pv.durations,ARRAY[15,30,60]),sp.paused,(sp.readiness_state='ready'),sp.timezone,sp.avatar_version,sp.public_version,sp.id::text,sp.cancellation_policy,sp.country::text,sp.currency::text FROM seller_profiles sp JOIN users u ON u.id=sp.user_id LEFT JOIN LATERAL (SELECT base_30_minor,durations FROM pricing_versions WHERE seller_id=sp.id ORDER BY created_at DESC LIMIT 1) pv ON true WHERE sp.handle=$1 AND sp.publication_state='published'`, h).Scan(&p.Handle, &p.Name, &p.IdentityURL, &p.Mode, &p.Base30, &p.Durations, &p.Paused, &p.Ready, &p.Timezone, &p.AvatarVersion, &p.PublicVersion, &sellerID, &policy, &p.Country, &p.Currency)
 	if errors.Is(e, pgx.ErrNoRows) {
+		if moved := a.movedHandle(r, h); moved != "" {
+			http.Redirect(w, r, "/api/v1/people/"+moved, http.StatusPermanentRedirect)
+			return
+		}
 		problem(w, 404, "NOT_FOUND", "This link is not available.")
 		return
 	}
@@ -378,7 +387,7 @@ func (a *API) claimProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var held bool
-	if e = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM handle_holds WHERE handle=$1 AND held_until>now())`, p.Handle).Scan(&held); e != nil {
+	if e = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM handle_holds WHERE handle=$1 AND held_until>now()) OR EXISTS(SELECT 1 FROM handle_redirects WHERE old_handle=$1)`, p.Handle).Scan(&held); e != nil {
 		problem(w, 503, "DATABASE_ERROR", "Profile could not be saved.")
 		return
 	}
@@ -519,4 +528,104 @@ func randomHex(n int) string {
 		panic(err)
 	}
 	return hex.EncodeToString(b)
+}
+
+// movedHandle returns the current link of a published seller who used to be
+// at h, or "" when nobody was.
+func (a *API) movedHandle(r *http.Request, h string) string {
+	var current string
+	if err := a.db.QueryRow(r.Context(), `SELECT sp.handle FROM handle_redirects hr JOIN seller_profiles sp ON sp.id=hr.seller_id WHERE hr.old_handle=$1 AND sp.publication_state='published'`, h).Scan(&current); err != nil {
+		return ""
+	}
+	return current
+}
+
+// handleChangesPerMonth limits how often a link can change, so shared links
+// don't churn and nobody can sweep up names by cycling through them.
+const handleChangesPerMonth = 3
+
+// changeHandle moves a seller to a new link. The old one keeps forwarding and
+// stays theirs.
+func (a *API) changeHandle(w http.ResponseWriter, r *http.Request) {
+	u, ok := a.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var in struct {
+		Handle string `json:"handle"`
+	}
+	if decode(r, &in) != nil {
+		problem(w, 400, "INVALID_BODY", "Check the submitted details.")
+		return
+	}
+	next := normalizeHandle(in.Handle)
+	if !validHandle(next) {
+		problem(w, 422, "INVALID_HANDLE", "Use 3 to 24 lowercase letters, numbers or single hyphens.")
+		return
+	}
+	tx, err := a.db.Begin(r.Context())
+	if err != nil {
+		problem(w, 503, "DATABASE_ERROR", "Your link could not be changed.")
+		return
+	}
+	defer tx.Rollback(r.Context())
+	var sellerID, current string
+	err = tx.QueryRow(r.Context(), `SELECT id::text,handle FROM seller_profiles WHERE user_id=$1 AND publication_state='published' FOR UPDATE`, u.ID).Scan(&sellerID, &current)
+	if errors.Is(err, pgx.ErrNoRows) {
+		problem(w, 404, "PROFILE_NOT_FOUND", "Your link was not found.")
+		return
+	}
+	if err != nil {
+		problem(w, 503, "DATABASE_ERROR", "Your link could not be changed.")
+		return
+	}
+	if next == current {
+		jsonOut(w, 200, map[string]any{"handle": current})
+		return
+	}
+	var recent int
+	if err = tx.QueryRow(r.Context(), `SELECT count(*) FROM audit_events WHERE target_id=$1 AND action='seller.handle_changed' AND created_at>now()-interval '30 days'`, sellerID).Scan(&recent); err != nil {
+		problem(w, 503, "DATABASE_ERROR", "Your link could not be changed.")
+		return
+	}
+	if recent >= handleChangesPerMonth {
+		problem(w, 429, "HANDLE_CHANGE_LIMIT", "You can change your link up to 3 times in 30 days. Try again later.")
+		return
+	}
+	var taken bool
+	if err = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM seller_profiles WHERE handle=$1) OR EXISTS(SELECT 1 FROM handle_holds WHERE handle=$1 AND held_until>now()) OR EXISTS(SELECT 1 FROM handle_redirects WHERE old_handle=$1 AND seller_id<>$2)`, next, sellerID).Scan(&taken); err != nil {
+		problem(w, 503, "DATABASE_ERROR", "Your link could not be changed.")
+		return
+	}
+	if taken {
+		problem(w, 409, "HANDLE_TAKEN", "That link is already taken. Try another.")
+		return
+	}
+	// Going back to an earlier link of theirs: it stops being a forward.
+	if _, err = tx.Exec(r.Context(), `DELETE FROM handle_redirects WHERE old_handle=$1 AND seller_id=$2`, next, sellerID); err != nil {
+		problem(w, 503, "DATABASE_ERROR", "Your link could not be changed.")
+		return
+	}
+	if _, err = tx.Exec(r.Context(), `INSERT INTO handle_redirects(old_handle,seller_id) VALUES($1,$2) ON CONFLICT(old_handle) DO UPDATE SET seller_id=EXCLUDED.seller_id,created_at=now()`, current, sellerID); err != nil {
+		problem(w, 503, "DATABASE_ERROR", "Your link could not be changed.")
+		return
+	}
+	_, err = tx.Exec(r.Context(), `UPDATE seller_profiles SET handle=$2,public_version=public_version+1 WHERE id=$1`, sellerID, next)
+	if pgErrCode(err) == "23505" {
+		problem(w, 409, "HANDLE_TAKEN", "That link is already taken. Try another.")
+		return
+	}
+	if err != nil {
+		problem(w, 503, "DATABASE_ERROR", "Your link could not be changed.")
+		return
+	}
+	if _, err = tx.Exec(r.Context(), `INSERT INTO audit_events(id,actor_id,action,target_id,reason,safe_summary) VALUES(gen_random_uuid(),$1,'seller.handle_changed',$2,'Seller changed their link',jsonb_build_object('from',$3::text,'to',$4::text))`, u.ID, sellerID, current, next); err != nil {
+		problem(w, 503, "DATABASE_ERROR", "Your link could not be changed.")
+		return
+	}
+	if err = tx.Commit(r.Context()); err != nil {
+		problem(w, 503, "DATABASE_ERROR", "Your link could not be changed.")
+		return
+	}
+	jsonOut(w, 200, map[string]any{"handle": next, "previous": current})
 }

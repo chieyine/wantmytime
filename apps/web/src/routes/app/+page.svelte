@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { linkLabel } from '$lib/handle';
 	import { onMount } from 'svelte';
 	import { env } from '$env/dynamic/public';
 	import { api } from '$lib/api';
@@ -70,7 +71,7 @@
 		<p>Your link, your hours, your bookings and your money, all in one place.</p>
 	</header>
 	<section class="workspace-link-panel" aria-labelledby="workspace-link-title">
-		<div><p class="workspace-kicker">YOUR LINK <span>01</span></p><h2 id="workspace-link-title">{link}</h2></div>
+		<div><p class="workspace-kicker">YOUR LINK <span>01</span></p><h2 id="workspace-link-title">{account.handle ? linkLabel(link) : link}</h2></div>
 		<div class="workspace-link-actions">{#if account.handle}<button type="button" class="workspace-action" onclick={copy}>{copied ? 'COPIED' : 'COPY LINK'} <span aria-hidden="true">↗</span></button><a class="workspace-action workspace-action-outline" href={`/${account.handle}`}>VIEW PAGE <span aria-hidden="true">↗</span></a>{:else}<a class="workspace-action" href="/claim">CLAIM YOUR LINK <span aria-hidden="true">↗</span></a>{/if}</div>
 		{#if copyError}<p class="workspace-inline-error" role="alert">{copyError}</p>{/if}
 	</section>

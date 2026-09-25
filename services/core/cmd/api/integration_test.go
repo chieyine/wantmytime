@@ -1016,3 +1016,49 @@ func tinyPNG() []byte {
 	_ = png.Encode(&buf, img)
 	return buf.Bytes()
 }
+
+func TestSellerChangesTheirLink(t *testing.T) {
+	h := newHarness(t)
+	s := h.newSeller("fixed")
+	old := s.handle
+	next := unique("new")
+	anon := h.client("")
+	if anon.expect(200, "GET", "/api/v1/handles/"+next+"/availability", nil)["available"] != true {
+		t.Fatal("new link should be free")
+	}
+	s.expect(200, "PUT", "/api/v1/me/link/handle", map[string]string{"handle": strings.ToUpper(next)})
+	// The old link forwards to the new one.
+	if got := anon.expect(200, "GET", "/api/v1/people/"+old, nil)["handle"]; got != next {
+		t.Fatalf("old link resolved to %v", got)
+	}
+	// Nobody else can claim or move to the old link; the seller can go back to it.
+	if anon.expect(200, "GET", "/api/v1/handles/"+old+"/availability", nil)["available"] != false {
+		t.Fatal("old link must stay reserved")
+	}
+	if s.expect(200, "GET", "/api/v1/handles/"+old+"/availability", nil)["available"] != true {
+		t.Fatal("the seller may go back to their old link")
+	}
+	other := h.newSeller("fixed")
+	other.expect(409, "PUT", "/api/v1/me/link/handle", map[string]string{"handle": old})
+	other.expect(409, "PUT", "/api/v1/me/link/handle", map[string]string{"handle": next})
+	claimer := h.client(unique("c") + "@seller.test")
+	claimer.signIn("claim")
+	claimer.expect(409, "POST", "/api/v1/me/link", map[string]any{"handle": old, "name": "Impostor", "mode": "fixed", "base_30_minor": 1000000, "durations": []int{30}, "timezone": "Africa/Lagos"})
+	s.expect(422, "PUT", "/api/v1/me/link/handle", map[string]string{"handle": "api"})
+	s.expect(200, "PUT", "/api/v1/me/link/handle", map[string]string{"handle": old})
+	if got := anon.expect(200, "GET", "/api/v1/people/"+next, nil)["handle"]; got != old {
+		t.Fatalf("going back: %v", got)
+	}
+	// At most three changes in 30 days.
+	s.expect(200, "PUT", "/api/v1/me/link/handle", map[string]string{"handle": unique("third")})
+	s.expect(429, "PUT", "/api/v1/me/link/handle", map[string]string{"handle": unique("fourth")})
+	if n := scalar[int64](t, `SELECT count(*) FROM audit_events WHERE actor_id=$1 AND action='seller.handle_changed'`, s.userID); n != 3 {
+		t.Fatalf("link changes audited %d times", n)
+	}
+	// Deleting the account stops forwards and holds every earlier link.
+	s.expect(200, "POST", "/api/v1/me/deletion", map[string]string{"confirm_email": s.client.email})
+	anon.expect(404, "GET", "/api/v1/people/"+next, nil)
+	if anon.expect(200, "GET", "/api/v1/handles/"+next+"/availability", nil)["available"] != false {
+		t.Fatal("a deleted seller's earlier link must be held")
+	}
+}

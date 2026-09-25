@@ -51,6 +51,7 @@ func (a *API) routes() http.Handler {
 	handle("GET /api/v1/me/link", a.getOwnProfile)
 	handle("POST /api/v1/me/link", a.claimProfile)
 	handle("PATCH /api/v1/me/link", a.updateProfile)
+	handle("PUT /api/v1/me/link/handle", a.rateLimited(challengeLimit, a.changeHandle))
 	handle("PUT /api/v1/me/avatar", a.rateLimited(uploadLimit, a.updateAvatar))
 	handle("DELETE /api/v1/me/avatar", a.deleteAvatar)
 	handle("GET /api/v1/me/availability", a.getAvailability)

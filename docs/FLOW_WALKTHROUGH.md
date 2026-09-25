@@ -18,6 +18,7 @@ Conventions: amounts are minor units in the seller's currency; "hold" is a `slot
 4. The draft (including country and browser timezone) waits in `sessionStorage`; `/verify` takes the code. Typing the 8th digit submits.
 5. `POST /api/v1/auth/challenges/{id}/verify` → account created or found, email marked verified, 30-day session cookie; the browser timezone is saved for emails.
 6. `POST /api/v1/me/link` → `seller_profiles` (published, `readiness_state='incomplete'`, `country`, `currency`), first `pricing_versions` row in that currency → `/app/onboarding`.
+7. The link is suggested from the seller's name at sign-up. Later, `PUT /api/v1/me/link/handle` changes it (up to 3 times in 30 days). The old link keeps forwarding (`GET /api/v1/people/{old}` answers 308, the page answers 301) and stays reserved for that seller; deleting the account puts every old link on hold.
 
 Edge cases: code expired or wrong 5 times → "invalid or expired", ask again. Handle taken between the check and the save → 409 "already claimed". Country not switched on → 422. **Fixed:** the seller's country and currency are now chosen here (they were hard-wired to Nigeria/NGN).
 

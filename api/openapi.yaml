@@ -120,6 +120,11 @@ paths:
     patch:
       summary: Update the authenticated user's seller profile and create a pricing version
       responses: { '200': { description: Profile updated }, '401': { description: Verified identity required }, '404': { description: Profile not found } }
+  /api/v1/me/link/handle:
+    put:
+      summary: Change the seller's link. The old link forwards to the new one and stays reserved for this seller.
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [handle], properties: { handle: { type: string, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$', minLength: 3, maxLength: 24 } } } } } }
+      responses: { '200': { description: Link changed; returns handle and previous }, '401': { description: Verified identity required }, '404': { description: Profile not found }, '409': { description: Link taken (HANDLE_TAKEN) }, '422': { description: Invalid or reserved link }, '429': { description: More than 3 changes in 30 days (HANDLE_CHANGE_LIMIT) } }
   /api/v1/me/avatar:
     put:
       summary: Upload a bounded PNG or JPEG seller image; metadata is discarded
