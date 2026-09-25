@@ -79,18 +79,29 @@ Visit [http://127.0.0.1:5173](http://127.0.0.1:5173) in your browser.
 
 ## 🧪 Testing & Verification
 
-Run the full verification test suite across both frontend and backend:
+CI runs all of this on every push and pull request (`.github/workflows/ci.yml`). To run it locally you need PostgreSQL with a role that may create databases; each run creates and drops its own database.
 
 ```bash
-# Go unit & integration tests with race detector
+# Go: formatting, vet, unit tests, then integration tests against PostgreSQL
 cd services/core
-go test -race ./...
+gofmt -l .
+go vet ./...
+go test ./...
+TEST_DATABASE_URL='postgres://aside:aside@127.0.0.1:54329/postgres?sslmode=disable' go test -tags integration ./cmd/api/...
 
-# SvelteKit typecheck and production build
+# Web: formatting and lint, type check, production build
 cd ../../apps/web
+npm run lint
 npm run check
 npm run build
+
+# End to end: builds the API and the site, then signs up, books, pays and
+# makes offers in a real browser, on desktop and phone sizes
+npx playwright install chromium   # once
+E2E_DATABASE_URL='postgres://aside:aside@127.0.0.1:54329/postgres?sslmode=disable' npm run test:e2e
 ```
+
+`npm run format` fixes formatting. To keep the one-off formatting commit out of `git blame`, run `git config blame.ignoreRevsFile .git-blame-ignore-revs` once.
 
 ---
 
