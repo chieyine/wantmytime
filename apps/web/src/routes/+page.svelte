@@ -1,4 +1,5 @@
 <script lang="ts">
+	import PageMeta from '$lib/components/PageMeta.svelte';
 	import { onMount } from 'svelte';
 	import TimeDial from '$lib/components/TimeDial.svelte';
 	let handle = $state('');
@@ -39,7 +40,7 @@
 	}
 </script>
 
-<svelte:head><title>WantMyTime — put a price on your time</title><meta name="description" content="One link for anyone who wants your time. They pick a slot and pay. You get paid after the call." /></svelte:head>
+<PageMeta title="WantMyTime — put a price on your time" description="One link for anyone who wants your time. They pick a slot and pay. You get paid after the call." />
 <div class="brand-home">
 	<section class="brand-hero">
 		<div class="brand-hero-top"><span>YOUR TIME HAS A PRICE</span><span>NAME IT</span></div>

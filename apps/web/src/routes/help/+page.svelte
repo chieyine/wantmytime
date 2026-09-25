@@ -1,4 +1,8 @@
-<svelte:head><title>Help — WantMyTime</title></svelte:head>
+<script lang="ts">
+	import PageMeta from '$lib/components/PageMeta.svelte';
+</script>
+
+<PageMeta title="Help — WantMyTime" description="Answers about booking, paying, cancelling, refunds and getting paid on WantMyTime." />
 <section class="article-page">
 	<p class="eyebrow">Help</p>
 	<h1 class="page-heading">Straight answers.</h1>

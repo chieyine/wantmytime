@@ -711,6 +711,17 @@ input[type=date]:focus-within,input[type=time]:focus-within{outline:3px solid va
 .choice-row-three {grid-template-columns:repeat(3,minmax(0,1fr))}
 .choice-row-three+.form-note {display:block;margin-top:10px}
 
+/* A link field: the fixed site address, then the part the person chooses. */
+.handle-input {display:flex;align-items:center;min-height:51px;border:1px solid var(--line-strong);background:var(--surface)}
+.handle-input:focus-within {outline:3px solid var(--focus);outline-offset:3px}
+.handle-input span {padding-left:14px;color:var(--ink-muted);font-size:14px;white-space:nowrap}
+.handle-input .field {border:0;min-height:49px;padding-left:1px;background:transparent;flex:1;min-width:0}
+.handle-input .field:focus-visible {outline:0}
+.link-handle {display:grid;gap:10px}
+.link-handle>label {font-size:13px;font-weight:600}
+.link-handle .form-note {margin:0}
+.link-handle .button {justify-self:start}
+
 /* Display type stays tight but never so tight that letters collide. */
 h1,h2 {letter-spacing:-.035em!important}
 h1 *,h2 * {letter-spacing:-.025em!important}

@@ -11,3 +11,5 @@ Disallow: /checkout
 Disallow: /payment
 Disallow: /access
 Disallow: /dev
+
+Sitemap: https://wantmytime.com/sitemap.xml

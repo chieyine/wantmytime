@@ -1,4 +1,5 @@
 <script lang="ts">
+	import PageMeta from '$lib/components/PageMeta.svelte';
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
 	import { currencySymbol, formatMoney, parseMoneyToMinor } from '$lib/money';
@@ -17,7 +18,7 @@
 		}
 	});
 </script>
-<svelte:head><title>Pricing — WantMyTime</title><meta name="description" content="Free to set up. WantMyTime keeps 5% of each paid booking, and nothing else." /></svelte:head>
+<PageMeta title="Pricing — WantMyTime" description="Free to set up. WantMyTime keeps 5% of each paid booking, and nothing else." />
 <section class="article-page">
 	<p class="eyebrow">Pricing</p>
 	<h1 class="page-heading">5%. That’s it.</h1>

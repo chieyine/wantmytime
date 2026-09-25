@@ -1,4 +1,8 @@
-<svelte:head><title>Privacy — WantMyTime</title></svelte:head>
+<script lang="ts">
+	import PageMeta from '$lib/components/PageMeta.svelte';
+</script>
+
+<PageMeta title="Privacy — WantMyTime" description="What WantMyTime collects, why, how long we keep it, and how to export or delete it." />
 <section class="article-page">
 	<p class="eyebrow">Privacy</p>
 	<h1 class="page-heading">Privacy, in plain terms.</h1>

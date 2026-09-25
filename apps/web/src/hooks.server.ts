@@ -4,6 +4,7 @@ import { env as publicEnv } from '$env/dynamic/public';
 import { reportError } from '$lib/observe/sentry';
 
 const requestIdPattern = /^[A-Za-z0-9._-]{8,64}$/;
+const privatePath = /^\/(app|ops|login|claim|verify|auth|booking|book|offer|checkout|payment|access|dev)(\/|$)/;
 
 function log(level: 'info' | 'warn' | 'error', message: string, fields: Record<string, unknown>) {
 	// One JSON object per line, matching the API and gateway logs.
@@ -61,6 +62,14 @@ export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.requestId = requestIdPattern.test(incoming) ? incoming : crypto.randomUUID().replaceAll('-', '');
 	const response = await resolve(event);
 	response.headers.set('x-request-id', event.locals.requestId);
+	// robots.txt only asks crawlers to stay out; this keeps private pages out of results even when linked.
+	if (privatePath.test(event.url.pathname)) {
+		try {
+			response.headers.set('x-robots-tag', 'noindex, nofollow');
+		} catch {
+			// Proxied API responses have immutable headers.
+		}
+	}
 	try {
 		securityHeaders(response.headers);
 	} catch {

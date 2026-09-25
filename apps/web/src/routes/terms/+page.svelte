@@ -1,4 +1,8 @@
-<svelte:head><title>Terms — WantMyTime</title></svelte:head>
+<script lang="ts">
+	import PageMeta from '$lib/components/PageMeta.svelte';
+</script>
+
+<PageMeta title="Terms — WantMyTime" description="The terms for selling and booking time on WantMyTime." />
 <section class="article-page">
 	<p class="eyebrow">Terms of use</p>
 	<h1 class="page-heading">Terms of use.</h1>

@@ -1,4 +1,8 @@
-<svelte:head><title>Acceptable use — WantMyTime</title></svelte:head>
+<script lang="ts">
+	import PageMeta from '$lib/components/PageMeta.svelte';
+</script>
+
+<PageMeta title="Acceptable use — WantMyTime" description="What you can and can’t sell or do on WantMyTime." />
 <section class="article-page">
 	<p class="eyebrow">Acceptable use</p>
 	<h1 class="page-heading">Use your link responsibly.</h1>

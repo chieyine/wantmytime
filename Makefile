@@ -31,7 +31,7 @@ migrate:
 
 verify:
 	cd apps/web && npm run check && npm run build
-	cd services/core && GOCACHE=/private/tmp/aside-go-cache go test ./... && GOCACHE=/private/tmp/aside-go-cache go vet ./...
+	cd services/core && go test ./... && go vet ./...
 
 build:
 	cd apps/web && npm run build
