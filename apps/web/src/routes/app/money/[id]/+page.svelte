@@ -1,12 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
-	import { formatNaira } from '$lib/money';
+	import { formatMoney } from '$lib/money';
 	let { params } = $props();
 	type Item = { id: string; booking_id: string; seller: string; starts_at: string; currency: string; gross_minor: number; deduction_minor: number; seller_entitlement_minor: number; route: string; state: string; provider_reference: string | null; settled_at: string | null };
 	let item = $state<Item | null>(null);
 	let message = $state('');
 	let loading = $state(true);
+	const formatNaira = (minor: number) => formatMoney(minor, item?.currency || 'NGN');
 	onMount(async () => {
 		try { item = await api<Item>(`/api/v1/me/settlements/${encodeURIComponent(params.id)}`); }
 		catch (error) { message = error instanceof Error ? error.message : 'This settlement record is unavailable.'; }

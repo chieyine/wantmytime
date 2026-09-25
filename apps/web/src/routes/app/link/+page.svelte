@@ -2,19 +2,20 @@
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
 	import { timezoneOptions } from '$lib/timezones';
+	import { currencySymbol } from '$lib/money';
 	import PublicPersonPage from '$lib/components/PublicPersonPage.svelte';
-	let handle=$state(''); let name=$state(''); let identity_url=$state(''); let mode=$state<'fixed'|'offer'>('fixed'); let amount=$state(10000); let durations=$state<number[]>([15,30,60]); let timezone=$state('Africa/Lagos'); let paused=$state(false); let exists=$state(false); let loading=$state(true); let saving=$state(false); let message=$state('');
+	let handle=$state(''); let name=$state(''); let identity_url=$state(''); let mode=$state<'fixed'|'offer'>('fixed'); let amount=$state(10000); let durations=$state<number[]>([15,30,60]); let timezone=$state('UTC'); let currency=$state('NGN'); let paused=$state(false); let exists=$state(false); let loading=$state(true); let saving=$state(false); let message=$state('');
 	let ready=$state(false); let activeView=$state<'edit'|'preview'>('edit');
 	let avatarPreview=$state(''); let avatarMessage=$state(''); let avatarBusy=$state(false); let avatarInput=$state<HTMLInputElement>();
 	let savedFingerprint=$state(''); let saveState=$state<'idle'|'saved'|'error'>('idle');
 	let fingerprint=$derived(JSON.stringify({name,identity_url,mode,amount:mode==='fixed'?Math.round(Number(amount||0)*100):0,durations,timezone,paused}));
 	let dirty=$derived(exists && !loading && fingerprint!==savedFingerprint);
 	let identityLabel=$derived.by(()=>{try{const h=new URL(identity_url).hostname.toLowerCase().replace(/^www\./,'');return ({'instagram.com':'Instagram','linkedin.com':'LinkedIn','x.com':'X','twitter.com':'X','tiktok.com':'TikTok','youtube.com':'YouTube','github.com':'GitHub'} as Record<string,string>)[h]??''}catch{return ''}});
-	let previewPerson=$derived({handle,name,identity_url,identity_label:identityLabel,avatar_url:avatarPreview,mode,base_30_minor:mode==='fixed'?Math.round(Number(amount||0)*100):0,durations,timezone,paused,ready,local_simulator:false});
+	let previewPerson=$derived({handle,name,identity_url,identity_label:identityLabel,avatar_url:avatarPreview,mode,base_30_minor:mode==='fixed'?Math.round(Number(amount||0)*100):0,durations,timezone,paused,ready,currency,local_simulator:false});
 	function toggle(d:number){durations=durations.includes(d)?durations.filter(x=>x!==d):[...durations,d].sort((a,b)=>a-b)}
 	onMount(async()=>{
 		try {
-			const p=await api<{handle:string;name:string;identity_url:string;mode:'fixed'|'offer';base_30_minor:number;durations:number[];timezone:string;paused:boolean;ready:boolean;avatar_version?:number}>('/api/v1/me/link');
+			const p=await api<{handle:string;name:string;identity_url:string;mode:'fixed'|'offer';base_30_minor:number;durations:number[];timezone:string;paused:boolean;ready:boolean;avatar_version?:number;currency?:string}>('/api/v1/me/link');currency=p.currency||'NGN';
 			handle=p.handle;name=p.name;identity_url=p.identity_url||'';mode=p.mode;amount=p.base_30_minor/100;durations=p.durations;timezone=p.timezone;paused=p.paused;ready=p.ready;exists=true;
 			savedFingerprint=JSON.stringify({name:p.name,identity_url:p.identity_url||'',mode:p.mode,amount:p.mode==='fixed'?p.base_30_minor:0,durations:p.durations,timezone:p.timezone,paused:p.paused});
 			const version=p.avatar_version||0;if(version)avatarPreview=`/api/v1/people/${encodeURIComponent(handle)}/avatar?v=${version}`;
@@ -45,7 +46,7 @@ async function removeAvatar(){avatarBusy=true;avatarMessage='';try{const respons
 	{:else}<div class="link-editor-status"><div><span class:dirty class:saved={saveState==='saved'&&!dirty} class="link-editor-status-dot"></span><strong>{saving?'SAVING':dirty?'UNSAVED CHANGES':saveState==='saved'?'CHANGES SAVED':'ALL CHANGES SAVED'}</strong></div><p>Changes appear in the preview immediately. Your public page updates when you save.</p></div><div class="link-editor-tabs" aria-label="Link editor view"><button class:active={activeView==='edit'} onclick={()=>activeView='edit'}>Edit your page</button><button class:active={activeView==='preview'} onclick={()=>activeView='preview'}>Preview</button></div><div class="link-editor-layout"><form class="setup-form link-editor-form" class:mobile-hidden={activeView==='preview'} onsubmit={(e)=>{e.preventDefault();save()}}>
 		<label>Handle<input class="field" value={handle} readonly /></label><label>Display name<input class="field" bind:value={name} maxlength="80" required /></label><label>Profile photo · optional<input class="field" bind:this={avatarInput} type="file" accept="image/png,image/jpeg" onchange={uploadAvatar} disabled={avatarBusy}/><span class="form-note">PNG or JPEG, up to 2 MB. We remove embedded metadata when saving.</span>{#if avatarMessage}<span class="form-note" aria-live="polite">{avatarMessage}</span>{/if}{#if avatarPreview}<img src={avatarPreview} class="avatar-upload-preview" alt=""/><button type="button" class="text-link" onclick={removeAvatar} disabled={avatarBusy}>Remove photo</button>{/if}</label><label>Link to one social profile · optional<input class="field" type="url" bind:value={identity_url} placeholder="https://instagram.com/…" /></label>
 		<fieldset><legend>How should requests work?</legend><div class="choice-row"><label class:chosen={mode==='fixed'}><input type="radio" bind:group={mode} value="fixed"/> I’ll set a price</label><label class:chosen={mode==='offer'}><input type="radio" bind:group={mode} value="offer"/> Let people make an offer</label></div></fieldset>
-		{#if mode==='fixed'}<label>Your price for 30 minutes<div class="money-input"><span>₦</span><input type="number" bind:value={amount} inputmode="decimal" min="1" step="0.01" required /></div></label>{/if}
+		{#if mode==='fixed'}<label>Your price for 30 minutes<div class="money-input"><span>{currencySymbol(currency).trim()}</span><input type="number" bind:value={amount} inputmode="decimal" min="1" step="0.01" required /></div></label>{/if}
 		<fieldset><legend>Available conversation lengths</legend><div class="duration-row">{#each [15,30,60] as d}<label class:selected={durations.includes(d)}><input type="checkbox" checked={durations.includes(d)} onchange={()=>toggle(d)}/> {d} min</label>{/each}</div></fieldset>
 		<label>Your timezone<select class="field" bind:value={timezone}>{#each timezoneOptions(timezone) as zone}<option value={zone}>{zone}</option>{/each}</select></label>
 		<label class="check-line"><input type="checkbox" bind:checked={paused}/> Pause new booking requests</label>

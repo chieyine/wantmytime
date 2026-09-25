@@ -41,6 +41,7 @@ type API struct {
 	retentionMu  sync.Mutex
 	retentionRan time.Time
 	logger       *slog.Logger
+	vapid        *vapidKeys // web push; nil when not configured
 	reporter     *observe.Reporter
 	metrics      *observe.Metrics
 }
@@ -56,6 +57,14 @@ func (a *API) log() *slog.Logger {
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if len(os.Args) > 1 && os.Args[1] == "vapid-keys" {
+		public, private, err := generateVAPIDKeys()
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("VAPID_PUBLIC_KEY=%s\nVAPID_PRIVATE_KEY=%s\n", public, private)
+		return
+	}
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		log.Fatal("DATABASE_URL is required; JSON fallback is disabled")
@@ -148,6 +157,12 @@ func main() {
 	}
 	if a.googleCalendarConfigured() {
 		go a.runCalendarWorker(ctx)
+	}
+	if vapid, vapidErr := loadVAPID(); vapidErr != nil {
+		logger.Error("web push is off: bad VAPID keys", "error", vapidErr.Error())
+	} else if vapid != nil {
+		a.vapid = vapid
+		go a.runPushWorker(ctx)
 	}
 	server := &http.Server{Addr: addr, Handler: a.routes(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 20 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
 	logger.Info("API listening", "addr", addr, "env", env, "provider_checkout_enabled", a.providerCheckoutConfigured(), "error_reporting", reporter != nil, "metrics_enabled", os.Getenv("METRICS_TOKEN") != "", "shared_rate_limits", a.redis != nil, "object_storage", a.media != nil)

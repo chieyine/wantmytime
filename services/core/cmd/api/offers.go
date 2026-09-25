@@ -82,8 +82,8 @@ func (a *API) createOffer(w http.ResponseWriter, r *http.Request) {
 	}
 	var sellerID, sellerUserID string
 	var mode string
-	var paused bool
-	err = tx.QueryRow(r.Context(), `SELECT id::text,user_id::text,mode,paused FROM seller_profiles WHERE handle=$1 AND publication_state='published' FOR UPDATE`, in.Seller).Scan(&sellerID, &sellerUserID, &mode, &paused)
+	var paused, ready bool
+	err = tx.QueryRow(r.Context(), `SELECT id::text,user_id::text,mode,paused,(readiness_state='ready') FROM seller_profiles WHERE handle=$1 AND publication_state='published' FOR UPDATE`, in.Seller).Scan(&sellerID, &sellerUserID, &mode, &paused, &ready)
 	if errors.Is(err, pgx.ErrNoRows) {
 		problem(w, 404, "NOT_FOUND", "This link is not available.")
 		return
@@ -96,7 +96,8 @@ func (a *API) createOffer(w http.ResponseWriter, r *http.Request) {
 		problem(w, 409, "OFFER_MODE_DISABLED", "This link is not accepting offers.")
 		return
 	}
-	if paused {
+	if paused || !ready {
+		// An offer the buyer could never pay for helps nobody.
 		problem(w, 409, "SELLER_UNAVAILABLE", "This link is not accepting offers right now.")
 		return
 	}
@@ -141,7 +142,7 @@ func (a *API) listOffers(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	rows, e := a.db.Query(r.Context(), `SELECT o.id::text,sp.handle,o.buyer_name,o.duration_minutes,o.state,o.version,o.expires_at,latest.amount_minor::text,CASE WHEN sp.user_id=$1 THEN 'seller' ELSE 'buyer' END,o.created_at FROM offers o JOIN seller_profiles sp ON sp.id=o.seller_id JOIN LATERAL (SELECT amount_minor FROM offer_versions WHERE offer_id=o.id ORDER BY version DESC LIMIT 1) latest ON true WHERE (sp.user_id=$1 OR o.buyer_user_id=$1) AND ($2::timestamptz IS NULL OR (o.created_at,o.id)<($2,$3::uuid)) ORDER BY o.created_at DESC,o.id DESC LIMIT 100`, u.ID, cursorAt, cursorID)
+	rows, e := a.db.Query(r.Context(), `SELECT o.id::text,sp.handle,o.buyer_name,o.duration_minutes,o.state,o.version,o.expires_at,latest.amount_minor::text,CASE WHEN sp.user_id=$1 THEN 'seller' ELSE 'buyer' END,o.created_at,sp.currency::text FROM offers o JOIN seller_profiles sp ON sp.id=o.seller_id JOIN LATERAL (SELECT amount_minor FROM offer_versions WHERE offer_id=o.id ORDER BY version DESC LIMIT 1) latest ON true WHERE (sp.user_id=$1 OR o.buyer_user_id=$1) AND ($2::timestamptz IS NULL OR (o.created_at,o.id)<($2,$3::uuid)) ORDER BY o.created_at DESC,o.id DESC LIMIT 100`, u.ID, cursorAt, cursorID)
 	if e != nil {
 		problem(w, 503, "DATABASE_ERROR", "Offers could not be loaded.")
 		return
@@ -158,11 +159,12 @@ func (a *API) listOffers(w http.ResponseWriter, r *http.Request) {
 		Amount   string    `json:"amount_minor"`
 		Role     string    `json:"role"`
 		Created  time.Time `json:"-"`
+		Currency string    `json:"currency"`
 	}
 	out := []item{}
 	for rows.Next() {
 		var x item
-		if rows.Scan(&x.ID, &x.Seller, &x.Buyer, &x.Duration, &x.State, &x.Version, &x.Expires, &x.Amount, &x.Role, &x.Created) != nil {
+		if rows.Scan(&x.ID, &x.Seller, &x.Buyer, &x.Duration, &x.State, &x.Version, &x.Expires, &x.Amount, &x.Role, &x.Created, &x.Currency) != nil {
 			problem(w, 503, "DATABASE_ERROR", "Offers could not be loaded.")
 			return
 		}
@@ -203,8 +205,10 @@ func (a *API) getOffer(w http.ResponseWriter, r *http.Request) {
 		LocalSimulator   bool       `json:"local_simulator"`
 		ProviderCheckout bool       `json:"provider_checkout_enabled"`
 		Timezone         string     `json:"timezone"`
+		Currency         string     `json:"currency"`
+		SellerName       string     `json:"seller_name"`
 	}
-	err := a.db.QueryRow(r.Context(), `SELECT o.id::text,sp.handle,o.buyer_name,o.duration_minutes,o.state,o.version,latest.amount_minor::text,o.expires_at,o.checkout_expires_at,CASE WHEN sp.user_id=$2 THEN 'seller' ELSE 'buyer' END,sp.timezone FROM offers o JOIN seller_profiles sp ON sp.id=o.seller_id JOIN LATERAL (SELECT amount_minor FROM offer_versions WHERE offer_id=o.id ORDER BY version DESC LIMIT 1) latest ON true WHERE o.id=$1 AND (sp.user_id=$2 OR o.buyer_user_id=$2)`, id, u.ID).Scan(&out.ID, &out.Seller, &out.Buyer, &out.Duration, &out.State, &out.Version, &out.Amount, &out.Expires, &out.CheckoutExpires, &out.Role, &out.Timezone)
+	err := a.db.QueryRow(r.Context(), `SELECT o.id::text,sp.handle,o.buyer_name,o.duration_minutes,o.state,o.version,latest.amount_minor::text,o.expires_at,o.checkout_expires_at,CASE WHEN sp.user_id=$2 THEN 'seller' ELSE 'buyer' END,sp.timezone,sp.currency::text,(SELECT display_name FROM users WHERE id=sp.user_id) FROM offers o JOIN seller_profiles sp ON sp.id=o.seller_id JOIN LATERAL (SELECT amount_minor FROM offer_versions WHERE offer_id=o.id ORDER BY version DESC LIMIT 1) latest ON true WHERE o.id=$1 AND (sp.user_id=$2 OR o.buyer_user_id=$2)`, id, u.ID).Scan(&out.ID, &out.Seller, &out.Buyer, &out.Duration, &out.State, &out.Version, &out.Amount, &out.Expires, &out.CheckoutExpires, &out.Role, &out.Timezone, &out.Currency, &out.SellerName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		problem(w, 404, "NOT_FOUND", "This offer is not available.")
 		return
@@ -218,7 +222,7 @@ func (a *API) getOffer(w http.ResponseWriter, r *http.Request) {
 		out.State = "expired"
 	}
 	out.LocalSimulator = a.localPaymentSimulatorEnabled()
-	out.ProviderCheckout = a.providerCheckoutConfigured()
+	out.ProviderCheckout = a.checkoutReadyFor(out.Currency)
 	jsonOut(w, 200, out)
 }
 

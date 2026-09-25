@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { api } from '$lib/api';
 	import { viewerTimeZone, zoneCity } from '$lib/time';
-	import { formatNaira } from '$lib/money';
+	import { formatMoney, parseMoneyToMinor } from '$lib/money';
+	import PushToggle from '$lib/components/PushToggle.svelte';
 
 	let { bookingId, backHref = '/access/bookings', inWorkspace = false } = $props<{ bookingId: string; backHref?: string; inWorkspace?: boolean }>();
 
-	type Booking = { id: string; seller: string; timezone: string; seller_name: string; buyer: string; duration_minutes: number; starts_at: string; meeting_deadline: string; amount_minor: string; state: string; payment_state: string; meeting_url: string; role: 'seller' | 'buyer'; issue_reason: string | null; buyer_completed: boolean; seller_completed: boolean; cancellation_open?: boolean };
+	type Booking = { id: string; seller: string; timezone: string; seller_name: string; buyer: string; duration_minutes: number; starts_at: string; meeting_deadline: string; amount_minor: string; state: string; payment_state: string; meeting_url: string; role: 'seller' | 'buyer'; issue_reason: string | null; buyer_completed: boolean; seller_completed: boolean; cancellation_open?: boolean; currency?: string; buyer_fee_minor?: number; meeting_source?: string; cancellation_request_reason?: string; cancellation_request_mine?: boolean };
 	type Policy = { key: string; name: string; summary: string };
 	type Lifecycle = {
 		cancellation_policy: Policy;
@@ -18,7 +19,8 @@
 		can_report_no_show: boolean;
 		can_report_problem: boolean;
 		problem_deadline: string;
-		problem: { open: boolean; reported_by: string; resolution: string };
+		problem: { open: boolean; reported_by: string; resolution: string; seller_response?: string; respond_by?: string | null; reason?: string };
+		can_answer_problem?: boolean;
 		payout?: { state: string; entitlement_minor: number; transfer_minor?: number; recovery_minor: number; release_at: string; paid_at: string | null; bank_name: string; account_last4: string; hold: string; hold_text?: string; note?: string };
 	};
 	type Preview = { can_cancel: boolean; reason?: string; role: string; refund_minor: number; refund_percent: number; policy_name: string; policy_summary: string; refund_drops_at?: string; paid: boolean };
@@ -33,6 +35,8 @@
 	let message = $state('');
 	let meeting = $state('');
 	let issue = $state('');
+	let answerNote = $state('');
+	let partialAmount = $state('');
 	let exceptionReason = $state('');
 	let exceptionOpen = $state(false);
 	let date = $state('');
@@ -47,6 +51,7 @@
 	let currentBookingId = '';
 
 	const upcoming = $derived(!!booking && booking.state === 'confirmed' && new Date(booking.starts_at) > new Date());
+	const formatNaira = (minor: number | string | null | undefined) => formatMoney(minor, booking?.currency || 'NGN');
 	const dateLabel = (value: string) => new Intl.DateTimeFormat(undefined, { dateStyle: 'full', timeStyle: 'short' }).format(new Date(value));
 	const stateLabels: Record<string, string> = { confirmed: 'Confirmed', completed: 'Completed', cancelled: 'Cancelled', no_show_buyer: 'Missed by the buyer', no_show_seller: 'Missed by the seller' };
 	const paymentLabels: Record<string, string> = { paid: 'Paid', simulated: 'Local simulation', refunded: 'Refunded', partially_refunded: 'Partly refunded' };
@@ -103,9 +108,15 @@
 	const requestReschedule = () => act(async () => { await post('/reschedules', { proposed_starts_at: selected }); slots = []; selected = ''; }, 'Request sent. The current time stays booked until the other person accepts.', 'The request could not be sent.');
 	const respond = (id: string, action: 'accept' | 'decline') => act(() => api(`/api/v1/reschedules/${encodeURIComponent(id)}/${action}`, { method: 'POST', body: '{}' }), action === 'accept' ? 'The booking time has changed for both of you.' : 'The original time stays.', 'The request could not be updated.');
 	const saveMeeting = () => act(() => api(`/api/v1/bookings/${encodeURIComponent(booking!.id)}/meeting`, { method: 'PATCH', body: JSON.stringify({ meeting_url: meeting }) }), 'The private meeting link is saved.', 'The link could not be saved.');
-	const reportIssue = () => act(async () => { await post('/issue', { reason: issue }); issue = ''; }, booking?.role === 'buyer' ? 'Thanks. WantMyTime will look into it and email you. The seller isn’t paid for this booking until it’s settled.' : 'Your report is with WantMyTime.', 'The report could not be saved.');
+	const reportIssue = () => act(async () => { await post('/issue', { reason: issue }); issue = ''; }, booking?.role === 'buyer' ? `Thanks. ${booking?.seller_name ?? 'The seller'} has a day to answer. If they don’t, you’re refunded the price in full. They aren’t paid for this booking until it’s settled.` : 'Your report is saved.', 'The report could not be saved.');
+	const partialMinor = $derived(parseMoneyToMinor(partialAmount));
+	const answerProblem = (action: 'refund_full' | 'refund_partial' | 'disagree') => act(async () => {
+		await post('/issue/response', { action, amount_minor: action === 'refund_partial' && partialMinor !== null ? Number(partialMinor) : 0, note: answerNote });
+		answerNote = '';
+		partialAmount = '';
+	}, action === 'disagree' ? 'Thanks. WantMyTime will look at both sides and email you both the outcome.' : 'Done. The buyer is refunded and the rest of your payout is sent shortly.', 'Your answer could not be saved.');
 	const complete = () => act(() => post('/completion'), 'Thanks. Your confirmation is saved.', 'Completion could not be saved.');
-	const requestException = () => act(async () => { await post('/cancellation', { reason: exceptionReason }); exceptionReason = ''; }, 'Your request is with WantMyTime. The booking stays as it is while it is reviewed.', 'The request could not be saved.');
+	const requestException = () => act(async () => { await post('/cancellation', { reason: exceptionReason }); exceptionReason = ''; preview = null; }, `Your request has gone to ${booking?.seller_name ?? 'the seller'}. If they agree, they cancel and you get a full refund. If not, the booking stays as it is.`, 'The request could not be saved.');
 
 	async function openCancel() {
 		message = '';
@@ -166,7 +177,7 @@
 			<div><small>WITH</small><strong>{booking.role === 'seller' ? booking.buyer : booking.seller_name}</strong></div>
 			<div><small>WHEN</small><strong>{dateLabel(booking.starts_at)}</strong></div>
 			<div><small>HOW LONG</small><strong>{booking.duration_minutes} minutes</strong></div>
-			<div><small>PRICE</small><strong>{formatNaira(Number(booking.amount_minor))}</strong></div>
+			<div><small>{booking.role === 'buyer' && (booking.buyer_fee_minor ?? 0) > 0 ? 'PAID' : 'PRICE'}</small><strong>{formatNaira(Number(booking.amount_minor) + (booking.role === 'buyer' ? booking.buyer_fee_minor ?? 0 : 0))}</strong></div>
 		</div>
 
 		{#if booking.state === 'cancelled'}
@@ -182,12 +193,15 @@
 			{#if booking.state === 'confirmed' || booking.state === 'completed'}<a class="button button-secondary" href={`/api/v1/bookings/${encodeURIComponent(booking.id)}/calendar`}>Add to calendar ↗</a>{/if}
 
 			{#if booking.role === 'seller' && upcoming}
-				<label>Private meeting link · HTTPS <span class="form-note">Due by {dateLabel(booking.meeting_deadline)}</span><input class="field" type="url" bind:value={meeting} placeholder="https://…" /></label>
-				<button class="button" onclick={saveMeeting} disabled={busy || !meeting.startsWith('https://')}>Save meeting link</button>
+				{#if booking.cancellation_request_reason && !booking.cancellation_request_mine}
+					<div class="notice notice-warning" role="status"><strong>{booking.buyer} asked to cancel:</strong> “{booking.cancellation_request_reason}”. If you agree, cancel below and they get a full refund. If not, do nothing; the booking stands and you’re paid as usual.</div>
+				{/if}
+				<label>Private meeting link · HTTPS <span class="form-note">{booking.meeting_source === 'auto' ? 'We created this video call link because none had been added. Paste your own to replace it.' : booking.meeting_source === 'google_meet' ? 'Created with Google Meet. Paste another link to replace it.' : `Due by ${dateLabel(booking.meeting_deadline)}. If you don’t add one, we create a video call link for you both then.`}</span><input class="field" type="url" bind:value={meeting} placeholder="https://…" /></label>
+				<button class="button" onclick={saveMeeting} disabled={busy || !meeting.startsWith('https://') || meeting === booking.meeting_url}>Save meeting link</button>
 			{:else if booking.role === 'buyer' && booking.meeting_url && booking.state === 'confirmed'}
 				<p class="notice notice-info">Your private meeting link is ready.</p><a class="text-link" href={booking.meeting_url} target="_blank" rel="noopener noreferrer">Open the meeting ↗</a>
 			{:else if booking.role === 'buyer' && upcoming}
-				<p class="notice notice-info">Your meeting link isn’t ready yet. It is due by {dateLabel(booking.meeting_deadline)}.</p>
+				<p class="notice notice-info">Your meeting link isn’t ready yet. You’ll have it by {dateLabel(booking.meeting_deadline)} at the latest, here and by email.</p>
 			{/if}
 
 			{#if upcoming || reschedules.some((r) => r.state === 'pending')}
@@ -217,17 +231,17 @@
 					{:else}
 						<div class="notice notice-warning" role="alert">
 							{#if !preview.paid}Cancelling frees the time for both of you.
-							{:else if preview.role === 'seller'}The buyer will be refunded {formatNaira(preview.refund_minor)} in full, and there will be no payout for this booking.
+							{:else if preview.role === 'seller'}The buyer will be refunded {formatNaira(preview.refund_minor)} in full, plus any payment fee they paid, and there will be no payout for this booking.
 							{:else if preview.refund_minor > 0}You’ll be refunded {formatNaira(preview.refund_minor)} ({preview.refund_percent}%).{#if preview.refund_drops_at} This drops after {dateLabel(preview.refund_drops_at)}.{/if}
 							{:else}Under the {preview.policy_name.toLowerCase()} policy, cancelling now gives no refund.{/if}
 						</div>
 						<label>Reason (optional, shared with WantMyTime only)<textarea class="field" rows="2" maxlength="500" bind:value={cancelReason}></textarea></label>
 						<div class="ops-nav"><button class="button" onclick={confirmCancel} disabled={busy}>{busy ? 'Cancelling…' : 'Yes, cancel the booking'}</button><button class="button button-secondary" onclick={() => (preview = null)} disabled={busy}>Keep it</button></div>
 						{#if preview.role === 'buyer' && preview.refund_percent < 100 && !exceptionOpen}
-							<details class="cancellation-request"><summary>Exceptional circumstances? Ask WantMyTime instead</summary><p>WantMyTime reviews the request. The booking stays in place until then.</p><label>What happened?<textarea class="field" rows="3" bind:value={exceptionReason} maxlength="500"></textarea></label><button class="button button-secondary" onclick={requestException} disabled={busy || exceptionReason.trim().length < 8}>Send request</button></details>
+							<details class="cancellation-request"><summary>Exceptional circumstances? Ask {booking.seller_name} for a full refund</summary><p>{booking.seller_name} decides. If they agree, they cancel and you get everything back. The booking stays in place until then.</p><label>What happened?<textarea class="field" rows="3" bind:value={exceptionReason} maxlength="500"></textarea></label><button class="button button-secondary" onclick={requestException} disabled={busy || exceptionReason.trim().length < 8}>Send request</button></details>
 						{/if}
 					{/if}
-					{#if exceptionOpen}<p class="notice notice-info">Your request to WantMyTime is open. The booking stays as it is while it’s reviewed.</p>{/if}
+					{#if exceptionOpen && booking.role === 'buyer'}<p class="notice notice-info">You asked {booking.seller_name} to cancel. If they agree, you get a full refund; until then the booking stays as it is.</p>{/if}
 				</section>
 			{/if}
 
@@ -261,14 +275,32 @@
 				{/if}
 			</section>
 
-			{#if life.problem.open}
-				<div class="notice notice-warning">{life.problem.reported_by === booking.role ? 'You reported a problem' : life.problem.reported_by === 'buyer' ? `${booking.buyer} reported a problem` : 'A problem was reported'}: “{(booking.issue_reason ?? '').replace(/[.!?\s]+$/, '')}”. WantMyTime is looking into it{booking.role === 'seller' && life.problem.reported_by === 'buyer' ? ' and your payout for this booking waits until then' : ''}.</div>
+			{#if booking.role === 'buyer' && booking.state === 'confirmed' && new Date(booking.starts_at).getTime() > Date.now()}<PushToggle audience="buyer" hideWhenOn />{/if}
+			{#if life.problem.open && life.problem.reported_by === 'buyer'}
+				{#if life.problem.seller_response === 'disagree'}
+					<div class="notice notice-warning">{booking.role === 'buyer' ? `${booking.seller_name} disagrees with the problem you reported.` : 'You disagreed with the buyer’s report.'} WantMyTime will look at both sides and email you both the outcome{booking.role === 'seller' ? '. Your payout for this booking waits until then' : ''}.</div>
+				{:else if booking.role === 'buyer'}
+					<div class="notice notice-warning">You reported a problem: “{(booking.issue_reason ?? '').replace(/[.!?\s]+$/, '')}”. {booking.seller_name} has until {life.problem.respond_by ? dateLabel(life.problem.respond_by) : 'tomorrow'} to answer. If they don’t, you’re refunded the price in full.</div>
+				{:else}
+					<div class="notice notice-warning">{booking.buyer} reported a problem: “{(life.problem.reason ?? booking.issue_reason ?? '').replace(/[.!?\s]+$/, '')}”. Answer by {life.problem.respond_by ? dateLabel(life.problem.respond_by) : 'tomorrow'}. If you don’t, they’re refunded the price in full automatically. Your payout for this booking waits until it’s settled.</div>
+					{#if life.can_answer_problem}
+						<section class="cancellation-request">
+							<button class="button button-secondary" onclick={() => answerProblem('refund_full')} disabled={busy}>Refund in full ({formatNaira(booking.amount_minor)})</button>
+							<label>Or refund part of it<input class="field" inputmode="decimal" bind:value={partialAmount} placeholder="Amount" /></label>
+							<button class="button button-secondary" onclick={() => answerProblem('refund_partial')} disabled={busy || partialMinor === null || Number(partialMinor) <= 0 || Number(partialMinor) >= Number(booking.amount_minor)}>Refund this amount</button>
+							<label>Or tell WantMyTime you disagree, and why<textarea class="field" rows="3" maxlength="1000" bind:value={answerNote}></textarea></label>
+							<button class="button button-secondary" onclick={() => answerProblem('disagree')} disabled={busy || answerNote.trim().length < 8}>I disagree</button>
+						</section>
+					{/if}
+				{/if}
+			{:else if life.problem.open}
+				<div class="notice notice-warning">{life.problem.reported_by === booking.role ? 'You reported a problem' : 'A problem was reported'}: “{(booking.issue_reason ?? '').replace(/[.!?\s]+$/, '')}”. It’s saved on this booking.</div>
 			{:else if life.problem.resolution}
-				<p class="notice notice-info">WantMyTime reviewed the reported problem: {life.problem.resolution}</p>
+				<p class="notice notice-info">The reported problem is settled: {life.problem.resolution}</p>
 			{/if}
 			{#if life.can_report_problem}
 				<details class="cancellation-request"><summary>Something went wrong?</summary>
-					{#if booking.role === 'buyer' && booking.payment_state === 'paid'}<p>Tell WantMyTime by {dateLabel(life.problem_deadline)}. After that the seller is paid and a refund can no longer be requested.</p>{/if}
+					{#if booking.role === 'buyer' && booking.payment_state === 'paid'}<p>Report it by {dateLabel(life.problem_deadline)}. The seller then has a day to refund you or disagree; if they don’t answer, you’re refunded the price in full.</p>{/if}
 					<label>Tell WantMyTime what happened<textarea class="field" rows="3" bind:value={issue} maxlength="1000"></textarea></label><button class="button button-secondary" onclick={reportIssue} disabled={busy || issue.trim().length < 8}>Report a problem</button></details>
 			{:else if booking.role === 'buyer' && !life.problem.open && (booking.state === 'confirmed' || booking.state === 'completed') && booking.payment_state === 'paid'}
 				<p class="form-note">The time to report a problem with this booking ended {dateLabel(life.problem_deadline)}.</p>
@@ -279,10 +311,10 @@
 					<h2>Your payout</h2>
 					{#if life.payout.state === 'paid'}<p>{formatNaira(life.payout.transfer_minor ?? 0)} sent to {life.payout.bank_name} ••{life.payout.account_last4}{life.payout.paid_at ? ` on ${dateLabel(life.payout.paid_at)}` : ''}.{#if life.payout.recovery_minor > 0} {formatNaira(life.payout.recovery_minor)} was kept to repay an earlier refund.{/if}</p>
 					{:else if life.payout.state === 'cancelled'}<p>No payout: the buyer was refunded in full.</p>
-					{:else if life.payout.state === 'processing'}<p>{formatNaira(life.payout.transfer_minor ?? 0)} is on its way to your bank.{#if life.payout.note} {life.payout.note}{/if}</p>
-					{:else if life.payout.state === 'failed'}<p class="notice notice-warning">The transfer didn’t go through. WantMyTime has been alerted; check your bank details under <a href="/app/settings/payouts">Payouts</a>.</p>
+					{:else if life.payout.state === 'processing'}<p>{formatNaira(life.payout.transfer_minor ?? 0)} is on its way to you.{#if life.payout.note} {life.payout.note}{/if}</p>
+					{:else if life.payout.state === 'failed'}<p class="notice notice-warning">The transfer didn’t go through. Check your details under <a href="/app/settings/payouts">Payouts</a>: as soon as you update them we send it again automatically. We also retry once by ourselves.</p>
 					{:else if life.payout.hold}<p>{life.payout.hold_text}</p>
-					{:else}<p>{formatNaira(life.payout.entitlement_minor)}{booking.state === 'cancelled' ? ' less any refund' : ''}, paid to your bank around {dateLabel(life.payout.release_at)}.{#if life.payout.note} {life.payout.note}{/if}</p>{/if}
+					{:else}<p>{formatNaira(life.payout.entitlement_minor)}{booking.state === 'cancelled' ? ' less any refund' : ''}, paid out around {dateLabel(life.payout.release_at)}.{#if life.payout.note} {life.payout.note}{/if}</p>{/if}
 				</section>
 			{/if}
 		</div>

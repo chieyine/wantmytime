@@ -32,6 +32,9 @@ func enqueueBookingNotifications(ctx context.Context, tx pgx.Tx, bookingID strin
 	if err := enqueueNotification(ctx, tx, bookingID, sellerID, "booking_confirmed_seller", bookingID+":booking-confirmed:seller", time.Now()); err != nil {
 		return err
 	}
+	if err := enqueuePush(ctx, tx, bookingID, sellerID, "new_booking_seller", bookingID+":push:new-booking", time.Now()); err != nil {
+		return err
+	}
 	if err := enqueueCalendarSync(ctx, tx, bookingID); err != nil {
 		return err
 	}
@@ -172,6 +175,8 @@ func (a *API) deliverNotification(ctx context.Context, jobID string) {
 	var recipient, code string
 	if target.IsOffer {
 		content, recipient, code = a.offerEmail(ctx, jobID)
+	} else if target.IsPayment {
+		content, recipient, code = a.exceptionEmail(ctx, jobID)
 	} else {
 		content, recipient, code = a.bookingEmail(ctx, jobID)
 	}
@@ -249,7 +254,13 @@ func (a *API) bookingEmail(ctx context.Context, jobID string) (emailContent, str
 			c.Heading = "You're booked with " + n.SellerName + "."
 			c.Paragraphs = []string{"Your time is confirmed. " + n.SellerName + " will add a private meeting link before the call, and we'll email it to you as soon as it's ready."}
 			if !simulated {
-				c.Facts = append(c.Facts, emailFact{"Paid", formatMoney(n.Currency, n.GrossMinor)})
+				var fee int64
+				_ = a.db.QueryRow(ctx, `SELECT COALESCE(max(buyer_fee_minor),0) FROM payment_attempts WHERE booking_id=$1 AND canonical_state='success'`, n.BookingID).Scan(&fee)
+				paid := formatMoney(n.Currency, n.GrossMinor+fee)
+				if fee > 0 {
+					paid += " (includes " + formatMoney(n.Currency, fee) + " payment fee)"
+				}
+				c.Facts = append(c.Facts, emailFact{"Paid", paid})
 				c.Notes = append(c.Notes, "Receipt: "+bookingURL+"/receipt")
 			}
 			c.Facts = append(c.Facts, emailFact{"Cancellation", policyOrDefault(n.CancellationPolicy).Summary})
@@ -263,7 +274,7 @@ func (a *API) bookingEmail(ctx context.Context, jobID string) (emailContent, str
 			c.Action = &emailLink{"Add the meeting link", bookingURL}
 			if !simulated {
 				c.Facts = append(c.Facts, emailFact{"Paid", formatMoney(n.Currency, n.GrossMinor)}, emailFact{"Your share", formatMoney(n.Currency, n.SellerEntitlementMinor)})
-				c.Notes = append(c.Notes, "Your share is paid to your bank about "+humanDuration(payoutDelay())+" after the session ends, once the buyer's time to report a problem has passed. Payout status is shown in your WantMyTime account.")
+				c.Notes = append(c.Notes, "Your share is paid to your payout account about "+humanDuration(payoutDelay())+" after the session ends, once the buyer's time to report a problem has passed. Payout status is shown in your WantMyTime account.")
 			}
 		}
 		if simulated {
@@ -274,7 +285,7 @@ func (a *API) bookingEmail(ctx context.Context, jobID string) (emailContent, str
 		if len(n.MeetingUrl) == 0 {
 			return c, "", "MEETING_LINK_NOT_READY"
 		}
-		if !upcoming {
+		if !upcoming && !(n.BookingState == "confirmed" && starts.After(time.Now().Add(-15*time.Minute))) {
 			return c, "", "STALE"
 		}
 		meeting, decryptErr := a.decryptMeetingLink(n.MeetingUrl)
@@ -323,8 +334,28 @@ func (a *API) bookingEmail(ctx context.Context, jobID string) (emailContent, str
 		c.Subject = "Add the meeting link for " + n.BuyerName + "'s booking"
 		c.Heading = "Your booking still needs a meeting link."
 		c.Paragraphs = []string{"Add a private meeting link before " + formatWhen(deadline, own) + " so " + n.BuyerName + " can join."}
+		if autoMeetingLinksEnabled() {
+			c.Paragraphs = append(c.Paragraphs, "If you don’t, we’ll create a video call link at that time and send it to you both.")
+		}
 		c.Facts = baseFacts
 		c.Action = &emailLink{"Add the meeting link", bookingURL}
+	case "meeting_link_auto_seller":
+		if !upcoming && !(n.BookingState == "confirmed" && starts.After(time.Now().Add(-15*time.Minute))) {
+			return c, "", "STALE"
+		}
+		if len(n.MeetingUrl) == 0 {
+			return c, "", "MEETING_LINK_NOT_READY"
+		}
+		meeting, decryptErr := a.decryptMeetingLink(n.MeetingUrl)
+		if decryptErr != nil {
+			return c, "", "MEETING_LINK_UNAVAILABLE"
+		}
+		c.Subject = "We made a call link for " + n.BuyerName + "'s booking"
+		c.Heading = "Your call has a link now."
+		c.Paragraphs = []string{"No meeting link had been added, so we created one and sent it to " + n.BuyerName + " too. Join from it at the start time."}
+		c.Facts = append(baseFacts, emailFact{"Meeting link", string(meeting)})
+		c.Action = &emailLink{"Join the call", string(meeting)}
+		c.Notes = []string{"Prefer your own link? Add it on the booking page; it replaces this one and " + n.BuyerName + " is told."}
 	case "reschedule_requested_buyer", "reschedule_requested_seller":
 		if n.RescheduleStartsAt == nil || n.RescheduleState != "pending" || !upcoming {
 			return c, "", "STALE"
@@ -354,7 +385,12 @@ func (a *API) bookingEmail(ctx context.Context, jobID string) (emailContent, str
 		}
 		c.Subject = otherName + " asked to cancel your booking"
 		c.Heading = otherName + " asked to cancel your booking."
-		c.Paragraphs = []string{"WantMyTime will review the request. Until then, the booking and any payment stay as they are, so keep the time free unless we tell you otherwise."}
+		if n.RecipientIsSeller {
+			c.Paragraphs = []string{"It’s your call. If you agree, cancel the booking from its page and they get a full refund. If not, you don’t need to do anything: the booking stays and you’re paid as usual."}
+			c.Action = &emailLink{"Review the request", bookingURL + "#cancel"}
+		} else {
+			c.Paragraphs = []string{"The booking stays as it is unless one of you cancels it from the booking page."}
+		}
 		c.Facts = baseFacts
 	case "cancellation_reviewed_buyer", "cancellation_reviewed_seller":
 		c.Subject = "Update on the cancellation request"
@@ -393,7 +429,7 @@ func (a *API) bookingEmail(ctx context.Context, jobID string) (emailContent, str
 		case n.RefundSellerShareMinor > 0:
 			c.Facts = append(c.Facts, emailFact{"Refunded to the buyer", formatMoney(n.Currency, n.RefundMinor)})
 			if kept := n.SellerEntitlementMinor - n.RefundSellerShareMinor; kept > 0 {
-				c.Notes = append(c.Notes, "You keep "+formatMoney(n.Currency, kept)+" under your cancellation policy. It is paid to your bank with your other payouts.")
+				c.Notes = append(c.Notes, "You keep "+formatMoney(n.Currency, kept)+" under your cancellation policy. It is paid out with your other payouts.")
 			} else {
 				c.Notes = append(c.Notes, "There is no payout for this booking.")
 			}
@@ -407,7 +443,7 @@ func (a *API) bookingEmail(ctx context.Context, jobID string) (emailContent, str
 		}
 		c.Subject = "Your refund of " + formatMoney(n.Currency, n.RefundMinor) + " is on its way"
 		c.Heading = "Your refund has been sent."
-		c.Paragraphs = []string{"We've sent " + formatMoney(n.Currency, n.RefundMinor) + " back to the card or account you paid with. Banks can take up to 10 working days to show it."}
+		c.Paragraphs = []string{"We've sent " + formatMoney(n.Currency, n.RefundMinor) + " back to the account you paid from. Banks can take up to 10 working days to show it."}
 		c.Facts = []emailFact{{"Booking", fmt.Sprintf("%d minutes with %s", duration, n.SellerName)}, {"Refund", formatMoney(n.Currency, n.RefundMinor)}}
 	case "no_show_reported_buyer", "no_show_reported_seller":
 		if n.NoShowState != "open" || n.NoShowResolvesAt == nil {
@@ -471,14 +507,14 @@ func (a *API) bookingEmail(ctx context.Context, jobID string) (emailContent, str
 		booking := fmt.Sprintf("%d minutes with %s, %s", duration, n.BuyerName, short)
 		c.Action = &emailLink{"View payouts", appOrigin() + "/app/settings/payouts"}
 		if n.PayoutNetMinor > 0 {
-			c.Subject = formatMoney(n.Currency, n.PayoutNetMinor) + " is on its way to your bank"
+			c.Subject = formatMoney(n.Currency, n.PayoutNetMinor) + " is on its way to you"
 			c.Heading = "Your payout has been sent."
-			c.Paragraphs = []string{"We've sent your earnings for this booking to your bank. Most banks show it within minutes; some take until the next working day."}
+			c.Paragraphs = []string{"We've sent your earnings for this booking to your payout account. Most banks and wallets show it within minutes; some take until the next working day."}
 			c.Facts = []emailFact{{"Booking", booking}, {"Amount", formatMoney(n.Currency, n.PayoutNetMinor)}, {"Paid to", n.PayoutBankName + " ••" + n.PayoutAccountLast4}}
 		} else {
 			c.Subject = "Your earnings repaid an earlier refund"
 			c.Heading = "Your earnings for this booking repaid an earlier refund."
-			c.Paragraphs = []string{"Nothing was sent to your bank this time, because this booking's earnings covered money refunded to a buyer after you had been paid."}
+			c.Paragraphs = []string{"Nothing was sent this time, because this booking's earnings covered money refunded to a buyer after you had been paid."}
 			c.Facts = []emailFact{{"Booking", booking}}
 		}
 		if n.PayoutRecoveryMinor > 0 {
@@ -487,14 +523,41 @@ func (a *API) bookingEmail(ctx context.Context, jobID string) (emailContent, str
 	case "problem_reported_seller":
 		c.Subject = n.BuyerName + " reported a problem with a booking"
 		c.Heading = n.BuyerName + " reported a problem."
-		c.Paragraphs = []string{"WantMyTime will look into it and may contact you. Your payout for this booking is on hold until then; if the problem isn't upheld, it is sent straight away."}
+		c.Paragraphs = []string{
+			"Open the booking to read what they said and answer within " + humanDuration(problemResponseWindow()) + ": refund them in full, refund part of the price, or tell us you disagree.",
+			"If you don't answer in time, the buyer is refunded the price in full automatically. Your payout for this booking waits until it's settled.",
+		}
 		c.Facts = baseFacts
+	case "problem_disputed_buyer":
+		c.Subject = "The seller disagrees with the problem you reported"
+		c.Heading = "WantMyTime will decide."
+		c.Paragraphs = []string{"The seller has told us they see it differently. We'll look at both sides and email you both the outcome. The seller isn't paid for this booking until then."}
+		c.Facts = baseFacts
+	case "payout_failed_seller":
+		if n.PayoutState != "failed" {
+			return c, "", "STALE"
+		}
+		amount := n.PayoutNetMinor
+		if amount <= 0 {
+			amount = n.SellerEntitlementMinor
+		}
+		c.Subject = "We couldn't send your payout"
+		c.Heading = "Your payout didn't go through."
+		c.Paragraphs = []string{
+			"Your bank or wallet provider didn't accept the payment for this booking. We'll try again automatically over the next few days.",
+			"If your account details have changed or might be wrong, update them in Settings › Payouts and we'll send it again as soon as the new account is ready.",
+		}
+		c.Facts = append(baseFacts, emailFact{"Amount", formatMoney(n.Currency, amount)})
+		if n.PayoutBankName != "" {
+			c.Facts = append(c.Facts, emailFact{"Account", n.PayoutBankName + " ••" + n.PayoutAccountLast4})
+		}
+		c.Action = &emailLink{"Check your payout account", appOrigin() + "/app/settings/payouts"}
 	case "problem_resolved_buyer", "problem_resolved_seller":
 		if n.IssueResolution == "" {
 			return c, "", "STALE"
 		}
 		c.Subject = "Update on the reported problem"
-		c.Heading = "The reported problem has been reviewed."
+		c.Heading = "The reported problem is settled."
 		c.Paragraphs = []string{n.IssueResolution}
 		c.Facts = baseFacts
 		switch {
@@ -528,7 +591,9 @@ func (a *API) offerEmail(ctx context.Context, jobID string) (emailContent, strin
 	if !n.RecipientIsSeller {
 		own = zoneOr(n.RecipientTimezone, own)
 	}
-	amount := formatMoney("NGN", n.AmountMinor)
+	currency := "NGN"
+	_ = a.db.QueryRow(ctx, `SELECT sp.currency::text FROM offers o JOIN seller_profiles sp ON sp.id=o.seller_id WHERE o.id=$1`, n.OfferID).Scan(&currency)
+	amount := formatMoney(currency, n.AmountMinor)
 	length := fmt.Sprintf("%d minutes", n.DurationMinutes)
 	sellerURL := appOrigin() + "/app/offers/" + n.OfferID
 	buyerURL := appOrigin() + "/offer/" + n.OfferID
@@ -679,6 +744,10 @@ func sameOffset(t time.Time, a, b *time.Location) bool {
 	return x == y
 }
 
+// currencySymbols are the symbols people expect for the currencies sellers
+// are paid in; anything else is written with its ISO code.
+var currencySymbols = map[string]string{"NGN": "₦", "GHS": "GH₵", "KES": "KSh ", "ZAR": "R", "USD": "$", "GBP": "£", "EUR": "€"}
+
 // formatMoney renders minor units with thousands separators: NGN 1050000 -> ₦10,500.
 func formatMoney(currency string, minor int64) string {
 	currency = strings.TrimSpace(currency)
@@ -698,8 +767,8 @@ func formatMoney(currency string, minor int64) string {
 	if fraction := minor % 100; fraction != 0 {
 		amount += fmt.Sprintf(".%02d", fraction)
 	}
-	if currency == "NGN" {
-		return sign + "₦" + amount
+	if symbol, ok := currencySymbols[currency]; ok {
+		return sign + symbol + amount
 	}
 	return sign + currency + " " + amount
 }

@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { formatNaira, priceForDuration } from '$lib/money';
+	import { formatMoney, priceForDuration, paymentMethodsSentence } from '$lib/money';
 	import TimeDial from '$lib/components/TimeDial.svelte';
 	import { onMount } from 'svelte';
-	type Profile = { handle:string; name:string; identity_url?:string; identity_label?:string; avatar_url?:string; timezone:string; base_30_minor:number|string; durations:number[]; paused:boolean; ready:boolean; mode:'fixed'|'offer'; local_simulator?:boolean; provider_checkout_enabled?:boolean; cancellation_policy?:{ key:string; name:string; summary:string }; rating?:{ average:number; count:number } };
+	type Profile = { handle:string; name:string; identity_url?:string; identity_label?:string; avatar_url?:string; timezone:string; base_30_minor:number|string; durations:number[]; paused:boolean; ready:boolean; mode:'fixed'|'offer'; currency?:string; payment_methods?:string[]; local_simulator?:boolean; provider_checkout_enabled?:boolean; cancellation_policy?:{ key:string; name:string; summary:string }; rating?:{ average:number; count:number } };
 	type Review = { id:string; reviewer:string; rating:number; body:string; seller_reply:string|null; created_at:string };
 	let { person, preview = false } = $props<{ person:Profile; preview?:boolean }>();
 	let duration = $state(30);
@@ -24,12 +24,12 @@
 	{#if preview}<p class="person-preview">Private preview. Save your changes to update your page.</p>{/if}
 	<div class="person-grid">
 		<header class="person-identity"><p class="person-kicker">BOOK TIME WITH</p><div class="person-avatar">{#if person.avatar_url}<img src={person.avatar_url} alt="" />{:else}<span>{person.name.slice(0, 1).toUpperCase()}</span>{/if}</div><h1>{person.name}</h1>{#if person.rating?.count}<a class="person-rating" href="#reviews" aria-label={`Rated ${person.rating.average} out of 5 from ${person.rating.count} reviews`}>★ {person.rating.average.toFixed(1)} <span>· {person.rating.count} review{person.rating.count === 1 ? '' : 's'}</span></a>{/if}<p class="person-handle">wantmytime.com/{person.handle || 'yourname'}</p>{#if person.identity_url}<a class="person-identity-link" href={person.identity_url} target="_blank" rel="noopener noreferrer">{person.identity_label || 'View profile'} <span aria-hidden="true">↗</span></a>{/if}<div class="person-dial"><TimeDial {duration} compact /></div></header>
-		<div class="person-action"><div class="person-action-head"><span>BOOKING / 01</span><span>{person.timezone || 'Africa/Lagos'}</span></div><h2>{person.mode === 'offer' ? 'MAKE AN OFFER.' : 'FIND A TIME.'}</h2>
+		<div class="person-action"><div class="person-action-head"><span>BOOKING / 01</span><span>{person.timezone || 'UTC'}</span></div><h2>{person.mode === 'offer' ? 'MAKE AN OFFER.' : 'FIND A TIME.'}</h2>
 			{#if person.local_simulator && !preview}<p class="person-status">Development preview · no money will be collected.</p>{/if}
 			{#if person.paused}<p class="person-unavailable">{person.name} isn’t taking bookings right now.</p>
-			{:else if person.mode === 'fixed' && !person.ready}<p class="person-unavailable">Bookings open soon. Check back in a little while.</p>
+			{:else if !person.ready}<p class="person-unavailable">Bookings open soon. Check back in a little while.</p>
 			{:else}<fieldset class="person-duration"><legend>HOW LONG?</legend><div class="person-duration-options">{#each person.durations as d}<button type="button" class:active={duration === d} aria-pressed={duration === d} onclick={() => duration = d}><strong>{d}</strong><span>MINUTES</span></button>{/each}</div></fieldset>
-				{#if person.mode === 'fixed'}<div class="person-price"><span>YOU PAY</span><strong>{formatNaira(amount)}</strong></div>{#if preview}<button class="person-cta" disabled>PICK A TIME</button>{:else}<a class="person-cta" href={`/book/new?seller=${encodeURIComponent(person.handle)}&duration=${duration}`}>PICK A TIME <span aria-hidden="true">↗</span></a>{/if}<p class="person-fineprint">You pay by bank transfer after you pick a time. The booking is yours the moment the money arrives.{#if person.cancellation_policy}{' '}{person.cancellation_policy.name} cancellation: {person.cancellation_policy.summary}{/if}</p>
+				{#if person.mode === 'fixed'}<div class="person-price"><span>YOU PAY</span><strong>{formatMoney(amount, person.currency)}</strong></div>{#if preview}<button class="person-cta" disabled>PICK A TIME</button>{:else}<a class="person-cta" href={`/book/new?seller=${encodeURIComponent(person.handle)}&duration=${duration}`}>PICK A TIME <span aria-hidden="true">↗</span></a>{/if}<p class="person-fineprint">{paymentMethodsSentence(person.payment_methods)} The booking is yours the moment the payment arrives.{#if person.cancellation_policy}{' '}{person.cancellation_policy.name} cancellation: {person.cancellation_policy.summary}{/if}</p>
 				{:else}<p class="person-offer-copy">Name your price for {duration} minutes. {person.name} can accept, counter or say no. You only pay if you both agree.</p>{#if preview}<button class="person-cta" disabled>MAKE AN OFFER</button>{:else}<a class="person-cta" href={`/offer/new?seller=${encodeURIComponent(person.handle)}&duration=${duration}`}>MAKE AN OFFER <span aria-hidden="true">↗</span></a>{/if}{/if}
 			{/if}
 		</div>

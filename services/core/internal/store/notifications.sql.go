@@ -352,18 +352,19 @@ func (q *Queries) NotificationContext(ctx context.Context, id string) (Notificat
 }
 
 const notificationTarget = `-- name: NotificationTarget :one
-SELECT kind, (offer_id IS NOT NULL)::boolean AS is_offer FROM notification_outbox WHERE id = $1 AND state = 'processing'
+SELECT kind, (offer_id IS NOT NULL)::boolean AS is_offer, (payment_exception_id IS NOT NULL)::boolean AS is_payment FROM notification_outbox WHERE id = $1 AND state = 'processing'
 `
 
 type NotificationTargetRow struct {
-	Kind    string
-	IsOffer bool
+	Kind      string
+	IsOffer   bool
+	IsPayment bool
 }
 
 func (q *Queries) NotificationTarget(ctx context.Context, id string) (NotificationTargetRow, error) {
 	row := q.db.QueryRow(ctx, notificationTarget, id)
 	var i NotificationTargetRow
-	err := row.Scan(&i.Kind, &i.IsOffer)
+	err := row.Scan(&i.Kind, &i.IsOffer, &i.IsPayment)
 	return i, err
 }
 

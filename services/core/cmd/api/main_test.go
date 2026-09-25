@@ -142,12 +142,12 @@ func TestKoraAmountsConvertWithoutFloatingPoint(t *testing.T) {
 }
 
 func TestBankTransferIsOfferedFirst(t *testing.T) {
-	t.Setenv("APPROVED_PAYMENT_CHANNELS", "card, bank_transfer")
+	t.Setenv("APPROVED_PAYMENT_CHANNELS", "pay_with_bank, bank_transfer")
 	got, err := approvedChannels()
-	if err != nil || len(got) != 2 || got[0] != "bank_transfer" || got[1] != "card" {
+	if err != nil || len(got) != 2 || got[0] != "bank_transfer" || got[1] != "pay_with_bank" {
 		t.Fatalf("channels %v %v", got, err)
 	}
-	t.Setenv("APPROVED_PAYMENT_CHANNELS", "card,ussd")
+	t.Setenv("APPROVED_PAYMENT_CHANNELS", "bank_transfer,card")
 	if _, err = approvedChannels(); err == nil {
 		t.Fatal("unsupported channel must be refused")
 	}
@@ -205,6 +205,12 @@ func TestProductionConfigChecks(t *testing.T) {
 		"PUBLIC_APP_ORIGIN": "https://wantmytime.com", "REDIS_URL": "rediss://:pw@cache.example.net:6380",
 		"MEDIA_S3_ENDPOINT": "https://acct.r2.cloudflarestorage.com", "DATABASE_URL": "postgres://u:p@db.example.net/wmt?sslmode=verify-full", "SENTRY_DSN": "https://k@o1.ingest.sentry.io/1",
 	}
+	pub, priv, err := generateVAPIDKeys()
+	if err != nil {
+		t.Fatal(err)
+	}
+	good["VAPID_PUBLIC_KEY"] = pub
+	good["VAPID_PRIVATE_KEY"] = priv
 	get := func(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
 	if problems, warnings := productionConfigProblems(get(good)); len(problems) != 0 || len(warnings) != 0 {
 		t.Fatalf("good config rejected: %v %v", problems, warnings)

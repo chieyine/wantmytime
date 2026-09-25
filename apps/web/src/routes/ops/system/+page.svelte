@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
-	type Status={email_transport_configured:boolean;payments_enabled:boolean;notifications:{queued:number;processing:number;sent:number;failed:number;cancelled:number;oldest_queued_at:string|null};provider_events:{queued:number;processing:number;failed:number;oldest_pending_at:string|null}};
+	type Market={country:string;currency:string;checkout_ready:boolean;payment_methods:string[]};
+	type Status={email_transport_configured:boolean;payments_enabled:boolean;markets?:Market[];notifications:{queued:number;processing:number;sent:number;failed:number;cancelled:number;oldest_queued_at:string|null};provider_events:{queued:number;processing:number;failed:number;oldest_pending_at:string|null}};
 	type Alert={key:string;title:string;state:'firing'|'resolved';severity:'critical'|'warning';summary:string;first_fired_at:string;last_notified_at:string|null;resolved_at:string|null;updated_at:string};
 	type Worker={name:string;instance:string;last_beat_at:string;age_seconds:number;last_error_at:string|null;last_error:string|null};
 	type Alerts={alerts:Alert[];workers:Worker[];alert_recipients_configured:boolean;error_reporting_configured:boolean};
@@ -20,6 +21,10 @@
 </script>
 <svelte:head><title>System health — Ops · WantMyTime</title></svelte:head>
 <section class="form-page app-page"><a class="back-link" href="/ops">← Operations</a><p class="eyebrow">System health</p><h1 class="page-heading">System health.</h1>
+{#if status?.markets?.length}
+<h2 class="section-heading">Seller countries</h2>
+<div class="list-stack">{#each status.markets as m (m.country)}<article class="list-card"><div><strong>{m.country} · {m.currency}</strong><p>{m.checkout_ready ? `Taking payments: ${m.payment_methods.join(', ')}` : 'Not taking payments: set its payment channels and limits.'}</p></div><span class:alert-critical={!m.checkout_ready}>{m.checkout_ready ? 'READY' : 'OFF'}</span></article>{/each}</div>
+{/if}
 {#if alerts}
 <h2 class="section-heading">Alerts</h2>
 {#if firing.length===0}<div class="notice notice-info">No alerts are firing.</div>{:else}<div class="list-stack">{#each firing as al (al.key)}<article class="list-card"><div><strong>{al.title}</strong><p>{al.summary}</p><small>Firing since {new Date(al.first_fired_at).toLocaleString()}{al.last_notified_at?` · last emailed ${new Date(al.last_notified_at).toLocaleString()}`:''}</small></div><span class:alert-critical={al.severity==='critical'}>{al.severity.toUpperCase()}</span></article>{/each}</div>{/if}

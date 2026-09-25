@@ -109,10 +109,10 @@ func (a *API) createQuote(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "DATABASE_ERROR", "A time could not be held.")
 		return
 	}
-	var sellerID, zone, mode string
+	var sellerID, zone, mode, currency string
 	var paused, ready bool
 	var notice, horizon, buffer int
-	err = tx.QueryRow(r.Context(), `SELECT id::text,timezone,paused,(readiness_state='ready'),minimum_notice_minutes,booking_horizon_days,buffer_minutes,mode FROM seller_profiles WHERE handle=$1 AND publication_state='published' FOR UPDATE`, in.Seller).Scan(&sellerID, &zone, &paused, &ready, &notice, &horizon, &buffer, &mode)
+	err = tx.QueryRow(r.Context(), `SELECT id::text,timezone,paused,(readiness_state='ready'),minimum_notice_minutes,booking_horizon_days,buffer_minutes,mode,currency FROM seller_profiles WHERE handle=$1 AND publication_state='published' FOR UPDATE`, in.Seller).Scan(&sellerID, &zone, &paused, &ready, &notice, &horizon, &buffer, &mode, &currency)
 	if errors.Is(err, pgx.ErrNoRows) {
 		problem(w, 404, "NOT_FOUND", "This link is not available.")
 		return
@@ -127,6 +127,10 @@ func (a *API) createQuote(w http.ResponseWriter, r *http.Request) {
 	}
 	if mode != "fixed" {
 		problem(w, 409, "OFFER_MODE_ONLY", "This link takes offers instead of fixed-price bookings. Send an offer to continue.")
+		return
+	}
+	if !a.localPaymentSimulatorEnabled() && !a.checkoutReadyFor(currency) {
+		problem(w, 409, "CURRENCY_NOT_READY", "Payments for this link are not switched on yet. Check back soon.")
 		return
 	}
 	location, err := time.LoadLocation(zone)
@@ -144,7 +148,7 @@ func (a *API) createQuote(w http.ResponseWriter, r *http.Request) {
 	var pricingID string
 	var base int64
 	var durations []int
-	err = tx.QueryRow(r.Context(), `SELECT id::text,base_30_minor,durations FROM pricing_versions WHERE seller_id=$1 ORDER BY created_at DESC LIMIT 1`, sellerID).Scan(&pricingID, &base, &durations)
+	err = tx.QueryRow(r.Context(), `SELECT id::text,base_30_minor,durations,currency FROM pricing_versions WHERE seller_id=$1 ORDER BY created_at DESC LIMIT 1`, sellerID).Scan(&pricingID, &base, &durations, &currency)
 	if err != nil || !hasDuration(durations, in.Duration) || base <= 0 {
 		problem(w, 409, "PRICE_UNAVAILABLE", "That conversation length is no longer available.")
 		return
@@ -177,7 +181,7 @@ func (a *API) createQuote(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "DATABASE_ERROR", "A time could not be held.")
 		return
 	}
-	if _, err = tx.Exec(r.Context(), `INSERT INTO quotes(id,seller_id,buyer_user_id,pricing_version_id,buyer_name,duration_minutes,starts_at,gross_minor,state,expires_at,idempotency_key,request_digest) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'held',$9,$10,$11)`, quoteID, sellerID, u.ID, pricingID, in.Name, in.Duration, starts, gross, expires, key, bodyDigest); err != nil {
+	if _, err = tx.Exec(r.Context(), `INSERT INTO quotes(id,seller_id,buyer_user_id,pricing_version_id,buyer_name,duration_minutes,starts_at,gross_minor,currency,state,expires_at,idempotency_key,request_digest) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$12,'held',$9,$10,$11)`, quoteID, sellerID, u.ID, pricingID, in.Name, in.Duration, starts, gross, expires, key, bodyDigest, strings.TrimSpace(currency)); err != nil {
 		problem(w, 503, "DATABASE_ERROR", "A booking quote could not be saved.")
 		return
 	}
@@ -200,7 +204,7 @@ func (a *API) createQuote(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "DATABASE_ERROR", "A booking hold could not be saved.")
 		return
 	}
-	jsonOut(w, 201, map[string]any{"id": quoteID, "state": "held", "gross_minor": strconv.FormatInt(gross, 10), "currency": "NGN", "duration_minutes": in.Duration, "starts_at": starts, "expires_at": expires, "local_simulator": a.localPaymentSimulatorEnabled()})
+	jsonOut(w, 201, map[string]any{"id": quoteID, "state": "held", "gross_minor": strconv.FormatInt(gross, 10), "currency": strings.TrimSpace(currency), "duration_minutes": in.Duration, "starts_at": starts, "expires_at": expires, "local_simulator": a.localPaymentSimulatorEnabled()})
 }
 
 func (a *API) createOfferQuote(w http.ResponseWriter, r *http.Request) {
@@ -212,7 +216,9 @@ func (a *API) createOfferQuote(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if guest && (guestScope.Purpose != "guest_offer" || !guestHas(guestScope, "offer_ids", r.PathValue("id"))) {
+	// A buyer may come back to an agreed offer from the email on another
+	// device (an access session) as well as in the session that sent it.
+	if guest && !guestHas(guestScope, "offer_ids", r.PathValue("id")) {
 		problem(w, 404, "NOT_FOUND", "This offer is not available.")
 		return
 	}
@@ -277,13 +283,13 @@ func (a *API) createOfferQuote(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "DATABASE_ERROR", "Checkout could not be started.")
 		return
 	}
-	var sellerID, zone, pricingID, sellerHandle string
+	var sellerID, zone, pricingID, sellerHandle, currency string
 	var stateOffer string
 	var paused, ready bool
 	var notice, horizon, buffer, duration int
 	var expiresAgreement *time.Time
 	var amount int64
-	err = tx.QueryRow(r.Context(), `SELECT o.seller_id::text,sp.handle,sp.timezone,sp.paused,(sp.readiness_state='ready'),sp.minimum_notice_minutes,sp.booking_horizon_days,sp.buffer_minutes,o.duration_minutes,o.state,o.checkout_expires_at,latest.amount_minor FROM offers o JOIN seller_profiles sp ON sp.id=o.seller_id JOIN LATERAL (SELECT amount_minor FROM offer_versions WHERE offer_id=o.id ORDER BY version DESC LIMIT 1) latest ON true WHERE o.id=$1 AND o.buyer_user_id=$2 FOR UPDATE OF o`, id, u.ID).Scan(&sellerID, &sellerHandle, &zone, &paused, &ready, &notice, &horizon, &buffer, &duration, &stateOffer, &expiresAgreement, &amount)
+	err = tx.QueryRow(r.Context(), `SELECT o.seller_id::text,sp.handle,sp.timezone,sp.paused,(sp.readiness_state='ready'),sp.minimum_notice_minutes,sp.booking_horizon_days,sp.buffer_minutes,o.duration_minutes,o.state,o.checkout_expires_at,latest.amount_minor,sp.currency FROM offers o JOIN seller_profiles sp ON sp.id=o.seller_id JOIN LATERAL (SELECT amount_minor FROM offer_versions WHERE offer_id=o.id ORDER BY version DESC LIMIT 1) latest ON true WHERE o.id=$1 AND o.buyer_user_id=$2 FOR UPDATE OF o`, id, u.ID).Scan(&sellerID, &sellerHandle, &zone, &paused, &ready, &notice, &horizon, &buffer, &duration, &stateOffer, &expiresAgreement, &amount, &currency)
 	if errors.Is(err, pgx.ErrNoRows) {
 		problem(w, 404, "NOT_FOUND", "This offer is not available.")
 		return
@@ -358,7 +364,7 @@ func (a *API) createOfferQuote(w http.ResponseWriter, r *http.Request) {
 		problem(w, 429, "TOO_MANY_HOLDS", "You are already holding several times. Finish or let one of them expire first.")
 		return
 	}
-	_, err = tx.Exec(r.Context(), `INSERT INTO quotes(id,seller_id,buyer_user_id,pricing_version_id,offer_id,buyer_name,duration_minutes,starts_at,gross_minor,state,expires_at,idempotency_key,request_digest) VALUES($1,$2,$3,$4,$5,(SELECT buyer_name FROM offers WHERE id=$5),$6,$7,$8,'held',$9,$10,$11)`, quoteID, sellerID, u.ID, pricingID, id, duration, starts, amount, expires, key, requestDigest)
+	_, err = tx.Exec(r.Context(), `INSERT INTO quotes(id,seller_id,buyer_user_id,pricing_version_id,offer_id,buyer_name,duration_minutes,starts_at,gross_minor,currency,state,expires_at,idempotency_key,request_digest) VALUES($1,$2,$3,$4,$5,(SELECT buyer_name FROM offers WHERE id=$5),$6,$7,$8,$12,'held',$9,$10,$11)`, quoteID, sellerID, u.ID, pricingID, id, duration, starts, amount, expires, key, requestDigest, strings.TrimSpace(currency))
 	if err != nil {
 		problem(w, 503, "DATABASE_ERROR", "Checkout quote could not be saved.")
 		return
@@ -387,7 +393,7 @@ func (a *API) createOfferQuote(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "DATABASE_ERROR", "The time hold could not be saved.")
 		return
 	}
-	jsonOut(w, 201, map[string]any{"id": quoteID, "state": "held", "gross_minor": strconv.FormatInt(amount, 10), "currency": "NGN", "duration_minutes": duration, "starts_at": starts, "expires_at": expires, "seller": sellerHandle, "local_simulator": a.localPaymentSimulatorEnabled()})
+	jsonOut(w, 201, map[string]any{"id": quoteID, "state": "held", "gross_minor": strconv.FormatInt(amount, 10), "currency": strings.TrimSpace(currency), "duration_minutes": duration, "starts_at": starts, "expires_at": expires, "seller": sellerHandle, "local_simulator": a.localPaymentSimulatorEnabled()})
 }
 
 func (a *API) getQuote(w http.ResponseWriter, r *http.Request) {
@@ -415,9 +421,10 @@ func (a *API) getQuote(w http.ResponseWriter, r *http.Request) {
 	var amount int64
 	var duration int
 	var starts time.Time
-	var handle, sellerName string
+	var handle, sellerName, currency, sellerCountry string
+	var offerID *string
 	var bookingID, bookingPaymentState *string
-	err = tx.QueryRow(r.Context(), `SELECT q.state,q.expires_at,q.gross_minor,q.duration_minutes,q.starts_at,sp.handle,su.display_name FROM quotes q JOIN seller_profiles sp ON sp.id=q.seller_id JOIN users su ON su.id=sp.user_id WHERE q.id=$1 AND q.buyer_user_id=$2 FOR UPDATE OF q`, id, u.ID).Scan(&state, &expires, &amount, &duration, &starts, &handle, &sellerName)
+	err = tx.QueryRow(r.Context(), `SELECT q.state,q.expires_at,q.gross_minor,q.duration_minutes,q.starts_at,sp.handle,su.display_name,q.currency::text,sp.country::text,q.offer_id::text FROM quotes q JOIN seller_profiles sp ON sp.id=q.seller_id JOIN users su ON su.id=sp.user_id WHERE q.id=$1 AND q.buyer_user_id=$2 FOR UPDATE OF q`, id, u.ID).Scan(&state, &expires, &amount, &duration, &starts, &handle, &sellerName, &currency, &sellerCountry, &offerID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		problem(w, 404, "NOT_FOUND", "This quote is not available.")
 		return
@@ -450,16 +457,11 @@ func (a *API) getQuote(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "DATABASE_ERROR", "The quote could not be loaded.")
 		return
 	}
-	jsonOut(w, 200, map[string]any{"id": id, "state": state, "gross_minor": strconv.FormatInt(amount, 10), "duration_minutes": duration, "starts_at": starts, "expires_at": expires, "seller": handle, "seller_name": sellerName, "transfer_fee_minor": a.transferFeeEstimate(r.Context(), amount), "booking_id": bookingID, "booking_payment_state": bookingPaymentState, "local_simulator": a.localPaymentSimulatorEnabled(), "provider_checkout_enabled": a.providerCheckoutConfigured(), "international_cards": internationalCardsEnabled(), "cancellation_policy": policyOrDefault(policyKey), "payment_methods": paymentMethods(), "problem_window_minutes": int(disputeWindow() / time.Minute)})
-}
-
-// paymentMethods lists how the buyer may pay, bank transfer first.
-func paymentMethods() []string {
-	methods, err := approvedChannels()
-	if err != nil {
-		return []string{}
-	}
-	return methods
+	currency = strings.TrimSpace(currency)
+	jsonOut(w, 200, map[string]any{"id": id, "state": state, "gross_minor": strconv.FormatInt(amount, 10), "currency": currency, "seller_country": strings.TrimSpace(sellerCountry), "duration_minutes": duration, "starts_at": starts, "expires_at": expires, "seller": handle, "seller_name": sellerName, "offer_id": offerID,
+		"transfer_fee_minor": a.transferFeeEstimate(r.Context(), currency, amount), "method_fees": a.methodFees(r.Context(), currency, amount), "booking_id": bookingID, "booking_payment_state": bookingPaymentState,
+		"local_simulator": a.localPaymentSimulatorEnabled(), "provider_checkout_enabled": a.checkoutReadyFor(currency), "cancellation_policy": policyOrDefault(policyKey),
+		"payment_methods": paymentMethodsFor(currency), "problem_window_minutes": int(disputeWindow() / time.Minute)})
 }
 
 func (a *API) simulatePayment(w http.ResponseWriter, r *http.Request) {
@@ -551,7 +553,7 @@ func (a *API) simulatePayment(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "BOOKING_ERROR", "The booking could not be confirmed.")
 		return
 	}
-	_, err = tx.Exec(r.Context(), `INSERT INTO payment_attempts(id,booking_id,provider,environment,merchant_reference,expected_minor,currency,canonical_state) VALUES(gen_random_uuid(),$1,'local_simulator','local',$2,$3,'NGN','simulated')`, bookingID, "sim_"+id, amount)
+	_, err = tx.Exec(r.Context(), `INSERT INTO payment_attempts(id,booking_id,provider,environment,merchant_reference,expected_minor,currency,canonical_state) SELECT gen_random_uuid(),$1,'local_simulator','local',$2,$3,q.currency,'simulated' FROM quotes q WHERE q.id=$4`, bookingID, "sim_"+id, amount, id)
 	if err != nil {
 		problem(w, 503, "BOOKING_ERROR", "The local payment record could not be saved.")
 		return

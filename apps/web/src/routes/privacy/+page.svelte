@@ -1,8 +1,8 @@
 <svelte:head><title>Privacy — WantMyTime</title></svelte:head>
 <section class="article-page">
-	<p class="eyebrow">Privacy · draft for legal review</p>
+	<p class="eyebrow">Privacy</p>
 	<h1 class="page-heading">Privacy, in plain terms.</h1>
-	<div class="notice notice-warning">This notice follows the Nigeria Data Protection Act 2023. Before launch, a lawyer should review it and the approval date at the bottom must be filled in.</div>
+	<p>This notice follows the Nigeria Data Protection Act 2023.</p>
 
 	<h2>Who we are</h2>
 	<p>WantMyTime is run by Kredit Technologies Limited (RC 9834452), House No. 348, Jamaina Road, Pompomari Bypass, Maiduguri, Borno State, Nigeria. We decide how your personal data is used, which makes us the data controller. Our data protection officer can be reached at <a class="text-link" href="mailto:privacy@wantmytime.com">privacy@wantmytime.com</a>.</p>
@@ -12,8 +12,9 @@
 		<li><b>Your account:</b> your email address and name, and the sign-in sessions you open.</li>
 		<li><b>If you take bookings:</b> your link, photo, profile link, prices, available hours, cancellation policy and bank account for payouts. We store the full account number encrypted and show only its last four digits.</li>
 		<li><b>Bookings and offers:</b> who booked whom, when, for how long and for how much; meeting links; reported problems, no-shows, cancellations and reviews.</li>
-		<li><b>Payments:</b> payment references, amounts and status from our payment provider. We never see or store card numbers or your bank login.</li>
+		<li><b>Payments:</b> payment references, amounts and status from our payment provider. We do not take card payments, and we never see your bank login or mobile money PIN.</li>
 		<li><b>Google Calendar, only if you connect it:</b> when your calendar is busy (not what your events are), plus an encrypted access grant.</li>
+		<li><b>Notifications, only if you switch them on:</b> the address your browser gives us for delivering notifications to that device, and which notifications were sent. Turning them off, or deleting your account, removes it.</li>
 		<li><b>Product and security records:</b> anonymous product events (for example “link copied”), the actions taken on your account, and request logs used to keep the service secure.</li>
 	</ul>
 
@@ -29,10 +30,11 @@
 	<h2>Who we share it with</h2>
 	<p>Only the service providers we need, each under a contract that limits what they may do with it:</p>
 	<ul>
-		<li><b>Kora</b> (payments and payouts, Nigeria).</li>
+		<li><b>Kora</b> (payments and payouts; Nigeria, and the other African countries where sellers are paid).</li>
 		<li><b>Cloudflare</b> (hosting of profile photos and protection of the site).</li>
 		<li><b>Our email provider</b> (sign-in codes and booking emails).</li>
 		<li><b>Google</b>, only if you connect Google Calendar.</li>
+		<li><b>Your browser’s notification service</b> (Google, Apple, Mozilla or Microsoft, depending on your device), only if you switch notifications on. Each notification is encrypted so that only your device can read it.</li>
 		<li><b>Our error-reporting service</b>, which receives technical error details without form contents.</li>
 		<li><b>Our hosting and database provider.</b></li>
 	</ul>
@@ -61,7 +63,7 @@
 		<li>Correct your name, link details and hours from your workspace.</li>
 		<li>For anything else, email <a class="text-link" href="mailto:privacy@wantmytime.com">privacy@wantmytime.com</a>. We reply within 30 days.</li>
 	</ul>
-	<p>If you are unhappy with how we handled your data, you can complain to the <a href="https://ndpc.gov.ng">Nigeria Data Protection Commission</a>.</p>
+	<p>If you are unhappy with how we handled your data, you can complain to the <a href="https://ndpc.gov.ng">Nigeria Data Protection Commission</a>. If you live in another country, you can also complain to the data protection authority there, and you have the rights its law gives you as well as these.</p>
 
 	<h2>Security</h2>
 	<p>Connections are encrypted. Bank account numbers, calendar grants, meeting links and operator security keys are encrypted in our database with separate keys. Sign-in uses one-time email codes, and operator access needs a second factor. If a breach puts your data at risk, we will tell the Commission within 72 hours and tell you without delay.</p>
@@ -70,5 +72,5 @@
 	<p>WantMyTime is for people aged 18 and over. We do not knowingly collect data from children.</p>
 
 	<h2>Changes</h2>
-	<p>If we change this notice in a way that matters, we will email account holders before the change takes effect. Last updated: [date of approval].</p>
+	<p>If we change this notice in a way that matters, we will email account holders before the change takes effect. Last updated: 25 September 2026.</p>
 </section>

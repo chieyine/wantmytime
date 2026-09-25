@@ -14,7 +14,7 @@ VALUES (gen_random_uuid(), sqlc.arg(event_key), sqlc.arg(offer_id)::uuid, sqlc.a
 ON CONFLICT (event_key) DO NOTHING;
 
 -- name: NotificationTarget :one
-SELECT kind, (offer_id IS NOT NULL)::boolean AS is_offer FROM notification_outbox WHERE id = sqlc.arg(id) AND state = 'processing';
+SELECT kind, (offer_id IS NOT NULL)::boolean AS is_offer, (payment_exception_id IS NOT NULL)::boolean AS is_payment FROM notification_outbox WHERE id = sqlc.arg(id) AND state = 'processing';
 
 -- name: EnqueueMeetingReady :exec
 INSERT INTO notification_outbox(id, event_key, booking_id, recipient_user_id, kind, due_at)

@@ -18,9 +18,9 @@ import (
 	"time"
 )
 
-// Kora (korapay.com) collects payments (bank transfer first, card as a
-// fallback) and pays sellers out of the same balance. Bank transfers settle
-// into the balance instantly; cards settle the next working day.
+// Kora (korapay.com) collects payments (bank transfer and pay with bank in
+// Nigeria, mobile money in Ghana and Kenya; no cards) and pays sellers out of
+// the same balance. Bank transfers settle into the balance instantly.
 //
 // Amounts on Kora's API are in major units (naira, not kobo). WantMyTime keeps
 // minor units everywhere else and converts only here.
@@ -214,12 +214,22 @@ type checkoutRequest struct {
 	QuoteID     string
 }
 
+// The buyer always bears Kora's fee: WantMyTime asks Kora for the seller's
+// price and Kora adds its own current fee on top, so a change in Kora's
+// pricing never reaches the seller's share or WantMyTime's 5%.
+const merchantBearsCost = false
+
+// maxCustomerFeeBps bounds the fee Kora may add for the buyer (10%): anything
+// larger is treated as an error rather than shown to a buyer.
+const maxCustomerFeeBps = 1000
+
 // bankTransferDetails is the one-off account the buyer transfers to.
 type bankTransferDetails struct {
 	AccountNumber string    `json:"account_number"`
 	AccountName   string    `json:"account_name"`
 	BankName      string    `json:"bank_name"`
-	AmountMinor   int64     `json:"amount_minor"`
+	AmountMinor   int64     `json:"amount_minor"` // what the buyer transfers, Kora's fee included
+	FeeMinor      int64     `json:"fee_minor"`    // Kora's fee within that amount
 	ExpiresAt     time.Time `json:"expires_at"`
 }
 
@@ -242,7 +252,7 @@ func (k *koraClient) startCheckout(ctx context.Context, in checkoutRequest) (str
 		return "", errors.New("invalid checkout request")
 	}
 	body := map[string]any{"amount": majorAmount(in.AmountMinor), "currency": in.Currency, "reference": in.Reference, "redirect_url": in.RedirectURL,
-		"notification_url": in.WebhookURL, "narration": in.Narration, "channels": in.Channels, "default_channel": in.Channels[0], "merchant_bears_cost": true,
+		"notification_url": in.WebhookURL, "narration": in.Narration, "channels": in.Channels, "default_channel": in.Channels[0], "merchant_bears_cost": merchantBearsCost,
 		"customer": map[string]string{"email": in.Email, "name": in.Name}, "metadata": map[string]string{"quote-id": strings.ReplaceAll(in.QuoteID, "-", "")}}
 	var out struct {
 		Data struct {
@@ -268,7 +278,7 @@ func (k *koraClient) startBankTransfer(ctx context.Context, in checkoutRequest) 
 		return bankTransferDetails{}, errors.New("invalid bank transfer request")
 	}
 	body := map[string]any{"amount": majorAmount(in.AmountMinor), "currency": in.Currency, "reference": in.Reference, "notification_url": in.WebhookURL,
-		"narration": in.Narration, "merchant_bears_cost": true, "customer": map[string]string{"email": in.Email, "name": in.Name},
+		"narration": in.Narration, "merchant_bears_cost": merchantBearsCost, "customer": map[string]string{"email": in.Email, "name": in.Name},
 		"metadata": map[string]string{"quote-id": strings.ReplaceAll(in.QuoteID, "-", "")}}
 	var out struct {
 		Data struct {
@@ -295,11 +305,12 @@ func (k *koraClient) startBankTransfer(ctx context.Context, in checkoutRequest) 
 	if expected <= 0 {
 		expected = int64(d.Amount)
 	}
-	if expected != in.AmountMinor {
-		// merchant_bears_cost=true: the buyer must be asked for exactly the price.
-		return bankTransferDetails{}, fmt.Errorf("Kora asked the buyer for %d instead of %d", expected, in.AmountMinor)
+	// The buyer bears the fee: Kora asks for the price plus its current fee.
+	fee := expected - in.AmountMinor
+	if fee < 0 || fee > in.AmountMinor*maxCustomerFeeBps/10000+100_00 {
+		return bankTransferDetails{}, fmt.Errorf("Kora asked the buyer for %d on a price of %d", expected, in.AmountMinor)
 	}
-	return bankTransferDetails{AccountNumber: d.BankAccount.AccountNumber, AccountName: d.BankAccount.AccountName, BankName: bankDisplayName(d.BankAccount.BankName), AmountMinor: expected, ExpiresAt: expires.UTC()}, nil
+	return bankTransferDetails{AccountNumber: d.BankAccount.AccountNumber, AccountName: d.BankAccount.AccountName, BankName: bankDisplayName(d.BankAccount.BankName), AmountMinor: expected, FeeMinor: fee, ExpiresAt: expires.UTC()}, nil
 }
 
 // bankDisplayName turns Kora's short names ("wema") into what buyers see in

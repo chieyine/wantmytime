@@ -105,7 +105,7 @@ func (a *API) importSettlementCSV(w http.ResponseWriter, r *http.Request) {
 		reference, settlementRef, currency := get("transaction_reference"), get("settlement_reference"), strings.ToUpper(get("currency"))
 		amount, parseErr := strconv.ParseInt(get("amount_minor"), 10, 64)
 		settledAt, timeErr := time.Parse(time.RFC3339, get("settled_at"))
-		if !validReference(reference) || amount < 0 || parseErr != nil || currency != "NGN" || timeErr != nil || settledAt.After(time.Now().Add(24*time.Hour)) || len(settlementRef) > 100 {
+		if !validReference(reference) || amount < 0 || parseErr != nil || len(currency) != 3 || timeErr != nil || settledAt.After(time.Now().Add(24*time.Hour)) || len(settlementRef) > 100 {
 			problem(w, 422, "INVALID_IMPORT", "A CSV row has an invalid reference, amount, currency, or settled_at timestamp.")
 			return
 		}

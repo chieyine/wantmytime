@@ -23,18 +23,22 @@ import (
 )
 
 type Person struct {
-	Handle           string `json:"handle"`
-	Name             string `json:"name"`
-	IdentityURL      string `json:"identity_url,omitempty"`
-	IdentityLabel    string `json:"identity_label,omitempty"`
-	AvatarVersion    int64  `json:"avatar_version,omitempty"`
-	PublicVersion    int64  `json:"public_version,omitempty"`
-	Mode             string `json:"mode"`
-	Base30           int64  `json:"base_30_minor"`
-	Durations        []int  `json:"durations"`
-	Paused           bool   `json:"paused"`
-	Ready            bool   `json:"ready"`
-	Timezone         string `json:"timezone"`
+	Handle        string `json:"handle"`
+	Name          string `json:"name"`
+	IdentityURL   string `json:"identity_url,omitempty"`
+	IdentityLabel string `json:"identity_label,omitempty"`
+	AvatarVersion int64  `json:"avatar_version,omitempty"`
+	PublicVersion int64  `json:"public_version,omitempty"`
+	Mode          string `json:"mode"`
+	Base30        int64  `json:"base_30_minor"`
+	Durations     []int  `json:"durations"`
+	Paused        bool   `json:"paused"`
+	Ready         bool   `json:"ready"`
+	Timezone      string `json:"timezone"`
+	// Country is where the seller is based and paid; it fixes the currency.
+	// It is chosen when the link is claimed and is not changed by an edit.
+	Country          string `json:"country,omitempty"`
+	Currency         string `json:"currency,omitempty"`
 	LocalSimulator   bool   `json:"local_simulator,omitempty"`
 	ProviderCheckout bool   `json:"provider_checkout_enabled,omitempty"`
 }
@@ -88,7 +92,7 @@ func (a *API) publicPerson(w http.ResponseWriter, r *http.Request) {
 	h := normalizeHandle(r.PathValue("handle"))
 	var p Person
 	var sellerID, policy string
-	e := a.db.QueryRow(r.Context(), `SELECT sp.handle,u.display_name,COALESCE(sp.identity_url,''),sp.mode,COALESCE(pv.base_30_minor,0),COALESCE(pv.durations,ARRAY[15,30,60]),sp.paused,(sp.readiness_state='ready'),sp.timezone,sp.avatar_version,sp.public_version,sp.id::text,sp.cancellation_policy FROM seller_profiles sp JOIN users u ON u.id=sp.user_id LEFT JOIN LATERAL (SELECT base_30_minor,durations FROM pricing_versions WHERE seller_id=sp.id ORDER BY created_at DESC LIMIT 1) pv ON true WHERE sp.handle=$1 AND sp.publication_state='published'`, h).Scan(&p.Handle, &p.Name, &p.IdentityURL, &p.Mode, &p.Base30, &p.Durations, &p.Paused, &p.Ready, &p.Timezone, &p.AvatarVersion, &p.PublicVersion, &sellerID, &policy)
+	e := a.db.QueryRow(r.Context(), `SELECT sp.handle,u.display_name,COALESCE(sp.identity_url,''),sp.mode,COALESCE(pv.base_30_minor,0),COALESCE(pv.durations,ARRAY[15,30,60]),sp.paused,(sp.readiness_state='ready'),sp.timezone,sp.avatar_version,sp.public_version,sp.id::text,sp.cancellation_policy,sp.country::text,sp.currency::text FROM seller_profiles sp JOIN users u ON u.id=sp.user_id LEFT JOIN LATERAL (SELECT base_30_minor,durations FROM pricing_versions WHERE seller_id=sp.id ORDER BY created_at DESC LIMIT 1) pv ON true WHERE sp.handle=$1 AND sp.publication_state='published'`, h).Scan(&p.Handle, &p.Name, &p.IdentityURL, &p.Mode, &p.Base30, &p.Durations, &p.Paused, &p.Ready, &p.Timezone, &p.AvatarVersion, &p.PublicVersion, &sellerID, &policy, &p.Country, &p.Currency)
 	if errors.Is(e, pgx.ErrNoRows) {
 		problem(w, 404, "NOT_FOUND", "This link is not available.")
 		return
@@ -103,7 +107,7 @@ func (a *API) publicPerson(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	p.LocalSimulator = a.localPaymentSimulatorEnabled()
-	p.ProviderCheckout = a.providerCheckoutConfigured()
+	p.ProviderCheckout = a.checkoutReadyFor(p.Currency)
 	rating, err := a.sellerReviewSummary(r.Context(), sellerID)
 	if err != nil {
 		problem(w, 503, "DATABASE_ERROR", "This link could not be loaded.")
@@ -114,7 +118,8 @@ func (a *API) publicPerson(w http.ResponseWriter, r *http.Request) {
 		Person
 		CancellationPolicy cancellationPolicy `json:"cancellation_policy"`
 		Rating             reviewSummary      `json:"rating"`
-	}{p, policyOrDefault(policy), rating})
+		PaymentMethods     []string           `json:"payment_methods"`
+	}{p, policyOrDefault(policy), rating, paymentMethodsFor(p.Currency)})
 }
 
 func (a *API) publicAvatar(w http.ResponseWriter, r *http.Request) {
@@ -301,7 +306,7 @@ func validatePerson(p *Person) error {
 		}
 	}
 	if p.Timezone == "" {
-		p.Timezone = "Africa/Lagos"
+		p.Timezone = "UTC"
 	}
 	if _, e := loadNamedTimezone(p.Timezone); e != nil {
 		return fmt.Errorf("choose a valid timezone")
@@ -345,6 +350,15 @@ func (a *API) claimProfile(w http.ResponseWriter, r *http.Request) {
 		problem(w, 422, "INVALID_PROFILE", e.Error())
 		return
 	}
+	if p.Country == "" {
+		p.Country = guessCountry(p.Timezone)
+	}
+	seat, known := marketFor(p.Country)
+	if !known {
+		problem(w, 422, "COUNTRY_NOT_SUPPORTED", "WantMyTime can’t pay sellers in that country yet.")
+		return
+	}
+	p.Country, p.Currency = seat.Country, seat.Currency
 	tx, e := a.db.Begin(r.Context())
 	if e != nil {
 		problem(w, 503, "DATABASE_ERROR", "Profile could not be saved.")
@@ -377,7 +391,7 @@ func (a *API) claimProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var sid string
-	e = tx.QueryRow(r.Context(), `INSERT INTO seller_profiles(id,user_id,handle,mode,publication_state,readiness_state,timezone,identity_url) VALUES(gen_random_uuid(),$1,$2,$3,'published',CASE WHEN $6 THEN 'ready' ELSE 'incomplete' END,$4,NULLIF($5,'')) RETURNING id::text`, u.ID, p.Handle, p.Mode, p.Timezone, p.IdentityURL, a.localPaymentSimulatorEnabled()).Scan(&sid)
+	e = tx.QueryRow(r.Context(), `INSERT INTO seller_profiles(id,user_id,handle,mode,publication_state,readiness_state,timezone,identity_url,country,currency) VALUES(gen_random_uuid(),$1,$2,$3,'published',CASE WHEN $6 THEN 'ready' ELSE 'incomplete' END,$4,NULLIF($5,''),$7,$8) RETURNING id::text`, u.ID, p.Handle, p.Mode, p.Timezone, p.IdentityURL, a.localPaymentSimulatorEnabled(), p.Country, p.Currency).Scan(&sid)
 	if pgErrCode(e) == "23505" {
 		problem(w, 409, "HANDLE_TAKEN", "That link is already claimed.")
 		return
@@ -386,7 +400,7 @@ func (a *API) claimProfile(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "DATABASE_ERROR", "Profile could not be saved.")
 		return
 	}
-	_, e = tx.Exec(r.Context(), `INSERT INTO pricing_versions(id,seller_id,currency,base_30_minor,durations,fee_basis_points) VALUES(gen_random_uuid(),$1,'NGN',$2,$3,500)`, sid, p.Base30, p.Durations)
+	_, e = tx.Exec(r.Context(), `INSERT INTO pricing_versions(id,seller_id,currency,base_30_minor,durations,fee_basis_points) VALUES(gen_random_uuid(),$1,$4,$2,$3,500)`, sid, p.Base30, p.Durations, p.Currency)
 	if e != nil {
 		problem(w, 503, "DATABASE_ERROR", "Profile pricing could not be saved.")
 		return
@@ -433,7 +447,7 @@ func (a *API) getOwnProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var p Person
-	e := a.db.QueryRow(r.Context(), `SELECT sp.handle,u.display_name,COALESCE(sp.identity_url,''),sp.mode,COALESCE(pv.base_30_minor,0),COALESCE(pv.durations,ARRAY[15,30,60]),sp.paused,(sp.readiness_state='ready'),sp.timezone,sp.avatar_version,sp.public_version FROM seller_profiles sp JOIN users u ON u.id=sp.user_id LEFT JOIN LATERAL (SELECT base_30_minor,durations FROM pricing_versions WHERE seller_id=sp.id ORDER BY created_at DESC LIMIT 1) pv ON true WHERE sp.user_id=$1`, u.ID).Scan(&p.Handle, &p.Name, &p.IdentityURL, &p.Mode, &p.Base30, &p.Durations, &p.Paused, &p.Ready, &p.Timezone, &p.AvatarVersion, &p.PublicVersion)
+	e := a.db.QueryRow(r.Context(), `SELECT sp.handle,u.display_name,COALESCE(sp.identity_url,''),sp.mode,COALESCE(pv.base_30_minor,0),COALESCE(pv.durations,ARRAY[15,30,60]),sp.paused,(sp.readiness_state='ready'),sp.timezone,sp.avatar_version,sp.public_version,sp.country::text,sp.currency::text FROM seller_profiles sp JOIN users u ON u.id=sp.user_id LEFT JOIN LATERAL (SELECT base_30_minor,durations FROM pricing_versions WHERE seller_id=sp.id ORDER BY created_at DESC LIMIT 1) pv ON true WHERE sp.user_id=$1`, u.ID).Scan(&p.Handle, &p.Name, &p.IdentityURL, &p.Mode, &p.Base30, &p.Durations, &p.Paused, &p.Ready, &p.Timezone, &p.AvatarVersion, &p.PublicVersion, &p.Country, &p.Currency)
 	if errors.Is(e, pgx.ErrNoRows) {
 		problem(w, 404, "PROFILE_NOT_FOUND", "You have not claimed a link yet.")
 		return
@@ -475,7 +489,7 @@ func (a *API) updateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var sid string
-	e = tx.QueryRow(r.Context(), `UPDATE seller_profiles SET mode=$2,timezone=$3,paused=$4,identity_url=NULLIF($5,''),public_version=public_version+1 WHERE user_id=$1 AND handle=$6 RETURNING id::text`, u.ID, p.Mode, p.Timezone, p.Paused, p.IdentityURL, p.Handle).Scan(&sid)
+	e = tx.QueryRow(r.Context(), `UPDATE seller_profiles SET mode=$2,timezone=$3,paused=$4,identity_url=NULLIF($5,''),public_version=public_version+1 WHERE user_id=$1 AND handle=$6 RETURNING id::text,country::text,currency::text`, u.ID, p.Mode, p.Timezone, p.Paused, p.IdentityURL, p.Handle).Scan(&sid, &p.Country, &p.Currency)
 	if errors.Is(e, pgx.ErrNoRows) {
 		problem(w, 404, "PROFILE_NOT_FOUND", "Your link was not found.")
 		return
@@ -488,7 +502,7 @@ func (a *API) updateProfile(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "DATABASE_ERROR", "Availability timezone could not be updated.")
 		return
 	}
-	if _, e = tx.Exec(r.Context(), `INSERT INTO pricing_versions(id,seller_id,currency,base_30_minor,durations,fee_basis_points) VALUES(gen_random_uuid(),$1,'NGN',$2,$3,500)`, sid, p.Base30, p.Durations); e != nil {
+	if _, e = tx.Exec(r.Context(), `INSERT INTO pricing_versions(id,seller_id,currency,base_30_minor,durations,fee_basis_points) VALUES(gen_random_uuid(),$1,$4,$2,$3,500)`, sid, p.Base30, p.Durations, p.Currency); e != nil {
 		problem(w, 503, "DATABASE_ERROR", "Pricing could not be saved.")
 		return
 	}

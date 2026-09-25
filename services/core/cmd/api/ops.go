@@ -293,9 +293,12 @@ func (a *API) opsSystem(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "PAYMENT_STATUS_UNAVAILABLE", "Provider event status could not be loaded.")
 		return
 	}
-	_, intlErr := store.New(a.db).ApprovedChannelFee(r.Context(), "card_international")
-	jsonOut(w, 200, map[string]any{"email_transport_configured": a.emailConfigured(), "payments_enabled": a.providerCheckoutConfigured(), "checkouts_paused": os.Getenv("CHECKOUTS_PAUSED") == "true",
-		"international_cards": map[string]bool{"enabled": internationalCardsEnabled(), "fee_schedule_approved": intlErr == nil}, "notifications": map[string]any{"queued": queued, "processing": processing, "sent": sent, "failed": failed, "cancelled": cancelled, "oldest_queued_at": oldest}, "provider_events": map[string]any{"queued": providerQueued, "processing": providerProcessing, "failed": providerFailed, "oldest_pending_at": providerOldest}})
+	markets := []map[string]any{}
+	for _, m := range enabledMarkets() {
+		markets = append(markets, map[string]any{"country": m.Country, "currency": m.Currency, "checkout_ready": a.checkoutReadyFor(m.Currency), "payment_methods": paymentMethodsFor(m.Currency)})
+	}
+	jsonOut(w, 200, map[string]any{"email_transport_configured": a.emailConfigured(), "payments_enabled": a.providerCheckoutConfigured(), "checkouts_paused": os.Getenv("CHECKOUTS_PAUSED") == "true", "markets": markets,
+		"notifications": map[string]any{"queued": queued, "processing": processing, "sent": sent, "failed": failed, "cancelled": cancelled, "oldest_queued_at": oldest}, "provider_events": map[string]any{"queued": providerQueued, "processing": providerProcessing, "failed": providerFailed, "oldest_pending_at": providerOldest}})
 }
 
 func (a *API) opsPeople(w http.ResponseWriter, r *http.Request) {
@@ -366,7 +369,7 @@ func (a *API) opsBookings(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	rows, err := a.db.Query(r.Context(), `SELECT b.id::text,sp.handle,b.buyer_name,b.duration_minutes,b.starts_at,b.gross_minor::text,b.state,b.payment_state,b.issue_reason,b.issue_resolved_at IS NOT NULL,b.created_at FROM bookings b JOIN seller_profiles sp ON sp.id=b.seller_id WHERE $1::timestamptz IS NULL OR (b.created_at,b.id)<($1,$2::uuid) ORDER BY b.created_at DESC,b.id DESC LIMIT 100`, cursorAt, cursorID)
+	rows, err := a.db.Query(r.Context(), `SELECT b.id::text,sp.handle,b.buyer_name,b.duration_minutes,b.starts_at,b.gross_minor::text,b.state,b.payment_state,b.issue_reason,b.issue_resolved_at IS NOT NULL,b.created_at,b.currency::text FROM bookings b JOIN seller_profiles sp ON sp.id=b.seller_id WHERE $1::timestamptz IS NULL OR (b.created_at,b.id)<($1,$2::uuid) ORDER BY b.created_at DESC,b.id DESC LIMIT 100`, cursorAt, cursorID)
 	if err != nil {
 		problem(w, 503, "DATABASE_ERROR", "Bookings could not be loaded.")
 		return
@@ -374,16 +377,16 @@ func (a *API) opsBookings(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	out := []map[string]any{}
 	for rows.Next() {
-		var id, handle, name, gross, state, payment string
+		var id, handle, name, gross, state, payment, currency string
 		var issue *string
 		var resolved bool
 		var duration int
 		var starts, created time.Time
-		if err := rows.Scan(&id, &handle, &name, &duration, &starts, &gross, &state, &payment, &issue, &resolved, &created); err != nil {
+		if err := rows.Scan(&id, &handle, &name, &duration, &starts, &gross, &state, &payment, &issue, &resolved, &created, &currency); err != nil {
 			problem(w, 503, "DATABASE_ERROR", "Bookings could not be read.")
 			return
 		}
-		out = append(out, map[string]any{"id": id, "seller": handle, "buyer_name": name, "duration_minutes": duration, "starts_at": starts, "gross_minor": gross, "state": state, "payment_state": payment, "issue_reason": issue, "issue_resolved": resolved, "created_at": created})
+		out = append(out, map[string]any{"id": id, "seller": handle, "buyer_name": name, "duration_minutes": duration, "starts_at": starts, "gross_minor": gross, "state": state, "payment_state": payment, "issue_reason": issue, "issue_resolved": resolved, "created_at": created, "currency": currency})
 	}
 	if err := rows.Err(); err != nil {
 		problem(w, 503, "DATABASE_ERROR", "Bookings could not be read.")
@@ -413,12 +416,14 @@ func (a *API) opsBookingDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := map[string]any{"id": id, "seller": handle, "buyer_name": buyer, "guest_email": guestEmail, "duration_minutes": duration, "starts_at": starts, "gross_minor": gross, "currency": strings.TrimSpace(currency), "state": state, "payment_state": payment, "created_at": created, "meeting_deadline": deadline, "meeting_ready_at": meetingReady, "issue_reason": issue, "issue_resolved": resolved, "payout": nil}
-	var reportedBy, resolution string
-	if err = a.db.QueryRow(r.Context(), `SELECT COALESCE(issue_reported_by,''),COALESCE(issue_resolution,'') FROM bookings WHERE id=$1`, id).Scan(&reportedBy, &resolution); err != nil {
+	var reportedBy, resolution, sellerResponse, sellerNote string
+	var disputed bool
+	if err = a.db.QueryRow(r.Context(), `SELECT COALESCE(issue_reported_by,''),COALESCE(issue_resolution,''),COALESCE(issue_seller_response,''),COALESCE(issue_seller_note,''),issue_disputed_at IS NOT NULL FROM bookings WHERE id=$1`, id).Scan(&reportedBy, &resolution, &sellerResponse, &sellerNote, &disputed); err != nil {
 		problem(w, 503, "DATABASE_ERROR", "Booking could not be loaded.")
 		return
 	}
 	out["issue_reported_by"], out["issue_resolution"] = reportedBy, resolution
+	out["issue_seller_response"], out["issue_seller_note"], out["issue_disputed"] = sellerResponse, sellerNote, disputed
 	payouts, err := a.queryPayouts(r.Context(), `po.booking_id=$2`, id)
 	if err != nil {
 		problem(w, 503, "DATABASE_ERROR", "Booking could not be loaded.")

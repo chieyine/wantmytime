@@ -146,6 +146,9 @@ func (a *API) resolveNoShows(ctx context.Context) error {
 		ids = append(ids, id)
 	}
 	rows.Close()
+	if err = rows.Err(); err != nil {
+		return err
+	}
 	for _, id := range ids {
 		if err = a.settleNoShow(ctx, id, "", "accepted", nil, "Not disputed within 24 hours."); err != nil {
 			return err
@@ -225,6 +228,10 @@ func (a *API) opsNoShows(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		items = append(items, map[string]any{"id": id, "booking_id": booking, "seller": handle, "buyer_name": buyer, "absent_role": absent, "state": state, "dispute_reason": dispute, "resolves_at": resolves, "created_at": created, "starts_at": starts})
+	}
+	if rows.Err() != nil {
+		problem(w, 503, "NO_SHOWS_UNAVAILABLE", "No-show reports could not be read.")
+		return
 	}
 	jsonOut(w, 200, map[string]any{"reports": items})
 }

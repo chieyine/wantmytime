@@ -7,7 +7,6 @@
 		email_transport_configured: boolean;
 		payments_enabled: boolean;
 		checkouts_paused: boolean;
-		international_cards?: { enabled: boolean; fee_schedule_approved: boolean };
 		notifications: Queue;
 		provider_events: Queue;
 	};
@@ -30,11 +29,7 @@
 			<div><small>NEW CHECKOUTS</small><strong>{status.checkouts_paused ? 'Paused' : status.payments_enabled ? 'Enabled' : 'Disabled'}</strong></div>
 			<div><small>PAYMENT GATE</small><strong>{status.payments_enabled ? 'All configured gates pass' : 'Not enabled'}</strong></div>
 			<div><small>EMAIL TRANSPORT</small><strong>{status.email_transport_configured ? 'Configured' : 'Not configured'}</strong></div>
-			<div><small>INTERNATIONAL CARDS</small><strong>{status.international_cards?.enabled ? 'Accepted' : 'Not accepted'}</strong></div>
 		</div>
-		{#if status.international_cards?.enabled && !status.international_cards.fee_schedule_approved}
-			<div class="notice notice-warning">International cards are switched on, but no approved international card fee schedule exists. Foreign-card payments whose fee exceeds the platform fee will stop as payment exceptions instead of becoming bookings.</div>
-		{/if}
 		{#if status.checkouts_paused}
 			<div class="notice notice-warning">The emergency pause blocks new provider checkout initialization. Provider events already received continue through verification and recovery.</div>
 		{:else if !status.payments_enabled}

@@ -101,8 +101,8 @@ func TestSellerOpensWhenBankAccountIsConfirmed(t *testing.T) {
 	}
 }
 
-// The buyer pays the bank's transfer fee on top of the price; the seller's
-// share is 95% of the price, untouched by the fee.
+// The buyer pays Kora's fee on top of the price (Kora adds it at its current
+// rate); the seller's share is 95% of the price, untouched by the fee.
 func TestBuyerPaysTheTransferFee(t *testing.T) {
 	h := newHarness(t)
 	fake := newFakeKora(t)
@@ -113,7 +113,7 @@ func TestBuyerPaysTheTransferFee(t *testing.T) {
 	if err := itPool.QueryRow(context.Background(), `SELECT pa.gross_minor,pa.deduction_minor,pa.seller_entitlement_minor,att.expected_minor,att.buyer_fee_minor FROM payment_allocations pa JOIN payment_attempts att ON att.booking_id=pa.booking_id WHERE pa.booking_id=$1`, bookingID).Scan(&gross, &deduction, &entitlement, &expected, &buyerFee); err != nil {
 		t.Fatal(err)
 	}
-	if gross != 1000000 || deduction != 50000 || entitlement != 950000 || expected != 1015229 || buyerFee != 15229 {
+	if gross != 1000000 || deduction != 50000 || entitlement != 950000 || expected != 1015000 || buyerFee != 15000 {
 		t.Fatalf("gross %d deduction %d entitlement %d expected %d fee %d", gross, deduction, entitlement, expected, buyerFee)
 	}
 	if got := scalar[int64](t, `SELECT entitlement_minor FROM seller_payouts WHERE booking_id=$1`, bookingID); got != 950000 {

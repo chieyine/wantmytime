@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: WantMyTime API
-  version: 0.2.0
-  description: PostgreSQL-backed identity, profiles, availability, local booking/offer flows and MFA-gated operations. Live payment collection remains disabled.
+  version: 0.3.0
+  description: WantMyTime API. Identity, seller links, availability, bookings and offers, payments through Kora (collect, hold, pay out after the session), refunds, no-shows, reviews and MFA-gated operations. Money is integer minor units with an ISO currency; each seller is priced and paid in their country's currency.
 servers:
   - url: http://127.0.0.1:8081
 components:
@@ -206,15 +206,32 @@ paths:
   /api/v1/bookings/{id}/issue:
     post:
       responses: { '201': { description: Participant issue report saved } }
+  /api/v1/push/config:
+    get:
+      security: []
+      description: Whether phone and browser notifications are on, and the server's VAPID public key (base64url) for PushManager.subscribe.
+      responses: { '200': { description: Push configuration } }
+  /api/v1/push/subscriptions:
+    post:
+      description: Save this browser's push subscription (endpoint and keys, as PushSubscription.toJSON()) for the signed-in person or the buyer on their booking link. Only the browsers' own push services are accepted.
+      responses: { '200': { description: Notifications on for this browser }, '422': { description: Invalid subscription }, '503': { description: Notifications not configured } }
+    delete:
+      description: Remove this browser's subscription (body {endpoint}).
+      responses: { '200': { description: Notifications off for this browser } }
+  /api/v1/bookings/{id}/issue/response:
+    post:
+      description: The seller answers a buyer's problem report with action refund_full, refund_partial (amount_minor) or disagree (note). No answer within PROBLEM_RESPONSE_HOURS refunds the buyer in full; only a disagreement goes to Operations.
+      responses: { '200': { description: Answer recorded; refund created or report sent to Operations }, '409': { description: No problem report waiting for this seller }, '422': { description: Invalid action, amount or note } }
   /api/v1/bookings/{id}/cancellation:
     post:
       responses: { '201': { description: Cancellation request recorded; booking and payment are unchanged }, '409': { description: Cancellation request already open } }
   /api/v1/bookings/{id}/completion:
     post:
       responses: { '200': { description: Participant completion signal saved } }
-  /api/v1/webhooks/paystack:
+  /api/v1/webhooks/kora:
     post:
       security: []
+      description: Kora notifications, signed with HMAC-SHA256 of the data object (x-korapay-signature). Charges are queued and verified independently; refund and transfer notices bring the next status check forward.
       responses: { '200': { description: Signed provider event durably accepted or duplicate acknowledged }, '400': { description: Invalid provider event }, '401': { description: Invalid provider signature }, '503': { description: Event not acknowledged because durable storage or controls are unavailable } }
   /api/v1/ops/session:
     post:
@@ -361,11 +378,132 @@ paths:
       responses: { '503': { description: Direct booking creation is disabled; use quotes and checkout } }
   /api/v1/ops/people/{id}/payout-readiness:
     post:
-      summary: Mark a seller ready (or not) for paid bookings and record their Paystack subaccount; requires ops:seller:approve and recent MFA
+      summary: Put a seller on hold (ready=false) or lift a hold (ready=true); requires ops:seller:approve and recent MFA. Sellers open by themselves once a payout account is saved.
       parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
       requestBody:
         required: true
         content:
           application/json:
-            schema: { type: object, required: [ready, reason], properties: { ready: { type: boolean }, subaccount_code: { type: string, pattern: '^ACCT_[A-Za-z0-9]{6,40}$' }, reason: { type: string, minLength: 8, maxLength: 300 } } }
-      responses: { '200': { description: Readiness updated and audited }, '403': { description: Permission denied }, '404': { description: No seller link }, '422': { description: Missing reason or subaccount } }
+            schema: { type: object, required: [ready, reason], properties: { ready: { type: boolean }, reason: { type: string, minLength: 8, maxLength: 300 } } }
+      responses: { '200': { description: Readiness updated and audited }, '403': { description: Permission denied }, '404': { description: No seller link }, '422': { description: Missing reason or payout account } }
+  /api/v1/markets:
+    get:
+      security: []
+      summary: Countries sellers can be based and paid in, with currency, payout options (bank, mobile money operators) and account rules
+      responses: { '200': { description: Enabled markets, Nigeria first by default } }
+  /api/v1/payout-banks:
+    get:
+      parameters: [{ name: country, in: query, required: false, schema: { type: string, example: NG } }]
+      responses: { '200': { description: Banks and mobile money operators for the seller's (or the given) country, and whether account names are checked with the bank } }
+  /api/v1/me/payout-account:
+    get:
+      responses: { '200': { description: The seller's payout account (last four digits only), payout timing and market } }
+    put:
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [bank_code, account_number], properties: { type: { type: string, enum: [bank_account, mobile_money] }, bank_code: { type: string, description: Bank code, or mobile money operator code }, account_number: { type: string }, account_name: { type: string, description: Required where the bank cannot confirm the name (outside Nigeria, and for mobile money) } } } } } }
+      responses: { '200': { description: Saved (encrypted); a changed account is usable after 24 hours; the seller opens for bookings }, '422': { description: Invalid account, bank or name } }
+  /api/v1/me/payout-account/resolve:
+    post:
+      responses: { '200': { description: Account holder name confirmed by the bank (Nigerian bank accounts) }, '409': { description: Name checks are not available for this account type or country }, '429': { description: More than 20 lookups in an hour } }
+  /api/v1/me/payouts:
+    get:
+      responses: { '200': { description: The seller's payouts with status, hold reason and totals in their currency } }
+  /api/v1/me/refund-recoveries:
+    get:
+      responses: { '200': { description: Refunded shares still to be recovered from later payouts } }
+  /api/v1/me/cancellation-policy:
+    get:
+      responses: { '200': { description: The seller's policy for new bookings and the options } }
+    put:
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [policy], properties: { policy: { type: string, enum: [flexible, moderate, strict] } } } } } }
+      responses: { '200': { description: Saved; existing bookings keep their policy } }
+  /api/v1/me/calendar:
+    get:
+      responses: { '200': { description: Google Calendar connection status } }
+    patch:
+      responses: { '200': { description: Calendar options saved } }
+    delete:
+      responses: { '200': { description: Disconnected and Google access revoked } }
+  /api/v1/me/calendar/google:
+    post:
+      responses: { '200': { description: Google consent URL to open } }
+  /api/v1/integrations/google/callback:
+    get:
+      security: []
+      responses: { '303': { description: Back to the connections page with an outcome code } }
+  /api/v1/bookings/{id}/cancellation-preview:
+    get:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: What cancelling now would refund, under the booking's frozen policy } }
+  /api/v1/bookings/{id}/cancel:
+    post:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [expected_refund_minor], properties: { expected_refund_minor: { type: integer }, reason: { type: string, maxLength: 500 } } } } } }
+      responses: { '200': { description: Cancelled; time released, refund started, both emailed }, '409': { description: Refund changed since it was shown, or the booking can no longer be cancelled } }
+  /api/v1/bookings/{id}/no-show:
+    post:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '201': { description: Reported; the other person has 24 hours to dispute } }
+  /api/v1/bookings/{id}/no-show/dispute:
+    post:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: Disputed; operations decide } }
+  /api/v1/bookings/{id}/review:
+    post:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '201': { description: Review saved (buyer only, after the session, within 60 days) } }
+  /api/v1/reviews/{id}/reply:
+    post:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: Seller's one public reply saved } }
+  /api/v1/people/{handle}/reviews:
+    get:
+      security: []
+      parameters: [{ name: handle, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Visible reviews and the average rating } }
+  /api/v1/ops/alerts:
+    get:
+      responses: { '200': { description: Firing and recent alerts and worker heartbeats } }
+  /api/v1/ops/payouts:
+    get:
+      responses: { '200': { description: Payouts, optionally only those needing attention } }
+  /api/v1/ops/payouts/{id}/retry:
+    post:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: Failed payout sent again under a new reference to the seller's current account } }
+  /api/v1/ops/refunds:
+    get:
+      responses: { '200': { description: Refunds, including automatic refunds of payments that could not become bookings } }
+  /api/v1/ops/refunds/{id}/approve:
+    post:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: Queued for sending to Kora } }
+  /api/v1/ops/refunds/{id}/retry:
+    post:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: Failed refund queued again } }
+  /api/v1/ops/refunds/{id}/record:
+    post:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: Recorded as refunded outside WantMyTime and finalized } }
+  /api/v1/ops/bookings/{id}/refund:
+    post:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '201': { description: Operator refund created and audited } }
+  /api/v1/ops/no-shows:
+    get:
+      responses: { '200': { description: No-show reports, disputed first } }
+  /api/v1/ops/no-shows/{id}/resolve:
+    post:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: Decided (buyer absent, seller absent or both attended) and audited } }
+  /api/v1/ops/reviews:
+    get:
+      responses: { '200': { description: All reviews } }
+  /api/v1/ops/reviews/{id}/hide:
+    post:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: Hidden with a reason and audited } }
+  /api/v1/ops/reviews/{id}/restore:
+    post:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: Restored and audited } }

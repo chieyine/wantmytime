@@ -69,6 +69,14 @@ func (c emailContent) message(to, idempotencyKey string) emailMessage {
 	return msg
 }
 
+// emailFooter says whether replies reach a person (EMAIL_REPLY_TO set).
+func emailFooter() string {
+	if replyTo := strings.TrimSpace(os.Getenv("EMAIL_REPLY_TO")); replyTo != "" && validEmail(replyTo) {
+		return "This is an automatic message about your booking on WantMyTime. Need help? Reply to this email."
+	}
+	return "This is an automatic message about your booking on WantMyTime. Replies are not monitored."
+}
+
 func renderEmail(c emailContent) (string, string) {
 	var t strings.Builder
 	t.WriteString(c.Heading + "\n\n")
@@ -87,7 +95,7 @@ func renderEmail(c emailContent) (string, string) {
 	for _, n := range c.Notes {
 		t.WriteString(n + "\n\n")
 	}
-	t.WriteString("WantMyTime\nThis is an automatic message about your booking. Replies are not monitored.\n")
+	t.WriteString("WantMyTime\n" + emailFooter() + "\n")
 
 	e := html.EscapeString
 	var h strings.Builder
@@ -118,7 +126,7 @@ func renderEmail(c emailContent) (string, string) {
 	for _, n := range c.Notes {
 		h.WriteString(`<p style="margin:0 0 12px;font-size:14px;line-height:1.55;color:#3d403b;">` + e(n) + `</p>`)
 	}
-	h.WriteString(`</td></tr><tr><td style="padding:16px 4px;font-size:12px;line-height:1.5;color:#5b5f58;">This is an automatic message about your booking on WantMyTime. Replies are not monitored.</td></tr>`)
+	h.WriteString(`</td></tr><tr><td style="padding:16px 4px;font-size:12px;line-height:1.5;color:#5b5f58;">` + e(emailFooter()) + `</td></tr>`)
 	h.WriteString(`</table></td></tr></table></body></html>`)
 	return t.String(), h.String()
 }

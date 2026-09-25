@@ -28,7 +28,7 @@ Keep `CHECKOUTS_PAUSED=true` for incidents affecting new collections. This stops
 
 ## Emails
 
-Email is the only notification channel. Every event where the other person must act, or should know, sends one:
+Email is the record of every event. Phone and browser notifications (web push, self-hosted) add four nudges for people who switch them on: a seller's new booking and a buyer's problem report, and "your call starts in 10 minutes" for both people. They are best-effort: a push that can't be delivered is dropped, a browser that has unsubscribed is forgotten, and nothing waits on them. Every event where the other person must act, or should know, sends an email:
 
 - **Bookings:** confirmations (with a calendar file), meeting link ready, reminders, missing meeting links.
 - **Reschedules:** a request, an acceptance (with an updated calendar file), a decline.
@@ -40,13 +40,16 @@ Each email shows times in the recipient's own time zone, which is captured from 
 ## Cancellations, refunds, no-shows and reviews
 
 - **Refunds** (Operations > Refunds, permission `ops:refund:approve`):
-  - With automatic refunds off, approve each refund there, or refund it in the Kora dashboard and record it as refunded with the reference.
-  - Failed refunds can be retried if Kora never accepted them.
+  - Refunds go to Kora by themselves (`REFUNDS_ENABLED` is on unless set to `false`; off, approve each one there).
+  - A refund Kora never accepted is retried by itself 1, 6 and 24 hours after failing; only one still failing after that raises the `refunds_failed` alert.
   - Operators can also refund any paid booking directly, with a reason.
   - Operators bootstrapped earlier must re-run `aside-api bootstrap-admin` to receive the new permission.
 - **Refund balance:** refunds come out of the platform's Kora balance. Before the payout, the seller's share comes out of the held payout; after it, it is recovered from their next payouts (see MONEY_FLOW.md).
-- **Payouts** (Operations > Payouts): sellers are paid about 3 hours after each session. Payouts waiting for funds to settle or for a bank account retry by themselves. Failed or bank-returned ones need a retry (permission `ops:refund:approve`) once the cause is fixed. `PAYOUTS_PAUSED=true` stops all transfers. Transfer-paid payouts go at the 3-hour mark; card-paid ones also wait for card settlement (the next working day).
-- **Reported problems** (the booking record in Operations): a buyer's problem holds the seller's payout. Resolve it with an outcome (emailed to both) and, if warranted, a refund amount; the rest of the payout is then released.
+- **Payouts** (Operations > Payouts): sellers are paid about 3 hours after each session, to a bank account or (Ghana, Kenya) a mobile money wallet, in their own currency. Payouts waiting for funds to settle or for a payout account retry by themselves. A failed or bank-returned payout emails the seller, is sent again by itself 2, 12, 24 and 48 hours after successive failures, and at once when the seller saves a different payout account (after its 24-hour safety hold); only one still failing after all of that raises `payouts_failed` (manual retry needs `ops:refund:approve`). `PAYOUTS_PAUSED=true` stops all transfers. Transfer-paid payouts go at the 3-hour mark; pay-with-bank and mobile money ones also wait for settlement (the next working day).
+- **Reported problems:** a buyer's problem goes to the seller first, who has `PROBLEM_RESPONSE_HOURS` (24) to refund in full, refund part, or disagree. A refund settles it; no answer refunds the buyer in full automatically. Only a disagreement comes to you (alert `problems_open`): open the booking in Operations, read both sides, and resolve it with an outcome and, if warranted, a refund amount. The seller's payout waits until it's settled.
+- **Other automatic recovery:** payment events that failed verification and emails that failed to send are put back in their queues 1, 6 and 24 hours later; their alerts fire only if they still fail. Payments that arrive with the wrong amount or currency are refunded automatically, like late and double payments.
+- **Requests to cancel outside the policy** (Operations > Cancellation requests): these go to the seller, who can say yes by cancelling (the buyer gets a full refund) or let the booking stand. They no longer hold payouts and close by themselves when the booking time arrives. Operations can still see them and step in.
+- **Payments that could not become a booking** (Operations > Payment exceptions and Refunds): a late transfer still gets its time if it is free. If the time was taken, the buyer paid twice, the seller stopped taking bookings or the offer had closed, the payment is refunded automatically (with `REFUNDS_ENABLED=true`; otherwise it waits in Refunds for approval) and the buyer is emailed twice: when it starts and when it is sent. Such exceptions show as `awaiting_provider` until the refund completes and then resolve themselves; they do not fire the payment-exceptions alert.
 - **No-shows** (Operations > No-shows): disputed reports wait for a decision. Undisputed ones settle themselves after 24 hours through the `lifecycle` worker.
 - **Reviews** (Operations > Reviews): hide only for abuse, personal data or clear falsehood.
 - **Alerts:**
@@ -130,9 +133,9 @@ A watchdog in the API checks conditions every minute. Only one instance evaluate
 | --- | --- | --- |
 | Payment events failed verification | A Kora event exhausted its retries | Operations > Provider events; a buyer may have paid without a booking |
 | Payment events are not being processed | The oldest pending event is over 15 minutes old | Check the API is running and can reach Kora |
-| Payment exceptions need review | Any open payment exception | Operations > Payment exceptions |
+| Payment exceptions need review | An exception still `open` or `investigating` (automatic refunds in progress are not counted) | Operations > Payment exceptions |
 | Dispute or refund deadline approaching | A provider case is due within 72 hours | Operations > Disputes and refunds |
-| Bookings starting soon without a meeting link | A booking starts within 2 hours with no link | Operations > Meeting delivery; contact the seller |
+| Bookings without a meeting link | With automatic links on (default): a booking passed its link deadline and no link could be created (check `MEETING_LINK_ENCRYPTION_KEY`). With them off: a booking starts within 2 hours with no link | Operations > Meeting delivery; contact the seller |
 | Emails failed to send | An email failed every retry in the last 24 hours | Check the email provider account and API logs |
 | Emails are not being sent | The oldest due email waited over 30 minutes | Check the provider and the notification worker |
 | Background worker stopped | A worker has not finished a cycle for 3 minutes | Restart the API and read its logs |

@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
-	import { formatNaira } from '$lib/money';
+	import { formatMoney } from '$lib/money';
 
-	type Payout = { id: string; booking_id: string; seller: string; buyer_name: string; state: string; entitlement_minor: number; amount_minor: number | null; transfer_minor?: number; recovery_minor: number; fee_minor: number; release_at: string; paid_at: string | null; bank_name: string; account_last4: string; hold: string; hold_text?: string; last_error: string; attempts: number; reference: string };
+	type Payout = { currency: string; id: string; booking_id: string; seller: string; buyer_name: string; state: string; entitlement_minor: number; amount_minor: number | null; transfer_minor?: number; recovery_minor: number; fee_minor: number; release_at: string; paid_at: string | null; bank_name: string; account_last4: string; hold: string; hold_text?: string; last_error: string; attempts: number; reference: string };
 	let payouts = $state<Payout[]>([]);
 	let paused = $state(false);
 	let onlyAttention = $state(true);
@@ -53,8 +53,8 @@
 		{#each payouts as p (p.id)}
 			<article class="list-card">
 				<div>
-					<strong>{formatNaira(p.amount_minor === null ? p.entitlement_minor : (p.transfer_minor ?? 0))} to @{p.seller}{p.account_last4 ? ` · ${p.bank_name} ••${p.account_last4}` : ''}</strong>
-					<p>{p.buyer_name} · <a href={`/ops/bookings/${encodeURIComponent(p.booking_id)}`}>booking ↗</a> · due {when(p.release_at)}{p.paid_at ? ` · paid ${when(p.paid_at)}` : ''}{p.recovery_minor > 0 ? ` · ${formatNaira(p.recovery_minor)} kept for earlier refunds` : ''}{p.fee_minor > 0 ? ` · transfer fee ${formatNaira(p.fee_minor)}` : ''}</p>
+					<strong>{formatMoney(p.amount_minor === null ? p.entitlement_minor : (p.transfer_minor ?? 0), p.currency)} to @{p.seller}{p.account_last4 ? ` · ${p.bank_name} ••${p.account_last4}` : ''}</strong>
+					<p>{p.buyer_name} · <a href={`/ops/bookings/${encodeURIComponent(p.booking_id)}`}>booking ↗</a> · due {when(p.release_at)}{p.paid_at ? ` · paid ${when(p.paid_at)}` : ''}{p.recovery_minor > 0 ? ` · ${formatMoney(p.recovery_minor, p.currency)} kept for earlier refunds` : ''}{p.fee_minor > 0 ? ` · transfer fee ${formatMoney(p.fee_minor, p.currency)}` : ''}</p>
 					{#if p.hold_text}<small>{p.hold_text}</small>{/if}
 					{#if p.last_error}<small>{p.last_error}</small>{/if}
 					<small>Ref {p.reference} · {p.attempts} attempt{p.attempts === 1 ? '' : 's'}</small>

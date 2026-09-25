@@ -27,9 +27,9 @@ func (a *API) listBookings(w http.ResponseWriter, r *http.Request) {
 	var rows pgx.Rows
 	var e error
 	if guest {
-		rows, e = a.db.Query(r.Context(), `SELECT b.id::text,sp.handle,b.buyer_name,b.duration_minutes,b.starts_at,b.gross_minor,b.state,b.payment_state FROM bookings b JOIN seller_profiles sp ON sp.id=b.seller_id WHERE b.buyer_user_id=$1 AND (b.id::text=ANY($2::text[]) OR b.quote_id::text=ANY($3::text[])) AND ($4::timestamptz IS NULL OR (b.starts_at,b.id)<($4,$5::uuid)) ORDER BY b.starts_at DESC,b.id DESC LIMIT 100`, u.ID, scope.BookingIDs, scope.QuoteIDs, cursorAt, cursorID)
+		rows, e = a.db.Query(r.Context(), `SELECT b.id::text,sp.handle,b.buyer_name,b.duration_minutes,b.starts_at,b.gross_minor,b.state,b.payment_state,b.currency::text FROM bookings b JOIN seller_profiles sp ON sp.id=b.seller_id WHERE b.buyer_user_id=$1 AND (b.id::text=ANY($2::text[]) OR b.quote_id::text=ANY($3::text[])) AND ($4::timestamptz IS NULL OR (b.starts_at,b.id)<($4,$5::uuid)) ORDER BY b.starts_at DESC,b.id DESC LIMIT 100`, u.ID, scope.BookingIDs, scope.QuoteIDs, cursorAt, cursorID)
 	} else {
-		rows, e = a.db.Query(r.Context(), `SELECT b.id::text,sp.handle,b.buyer_name,b.duration_minutes,b.starts_at,b.gross_minor,b.state,b.payment_state FROM bookings b JOIN seller_profiles sp ON sp.id=b.seller_id WHERE (sp.user_id=$1 OR b.buyer_user_id=$1) AND ($2::timestamptz IS NULL OR (b.starts_at,b.id)<($2,$3::uuid)) ORDER BY b.starts_at DESC,b.id DESC LIMIT 100`, u.ID, cursorAt, cursorID)
+		rows, e = a.db.Query(r.Context(), `SELECT b.id::text,sp.handle,b.buyer_name,b.duration_minutes,b.starts_at,b.gross_minor,b.state,b.payment_state,b.currency::text FROM bookings b JOIN seller_profiles sp ON sp.id=b.seller_id WHERE (sp.user_id=$1 OR b.buyer_user_id=$1) AND ($2::timestamptz IS NULL OR (b.starts_at,b.id)<($2,$3::uuid)) ORDER BY b.starts_at DESC,b.id DESC LIMIT 100`, u.ID, cursorAt, cursorID)
 	}
 	if e != nil {
 		problem(w, 503, "DATABASE_ERROR", "Bookings could not be loaded.")
@@ -45,11 +45,12 @@ func (a *API) listBookings(w http.ResponseWriter, r *http.Request) {
 		Amount   int64     `json:"amount_minor"`
 		State    string    `json:"state"`
 		Payment  string    `json:"payment_state"`
+		Currency string    `json:"currency"`
 	}
 	out := []item{}
 	for rows.Next() {
 		var x item
-		if rows.Scan(&x.ID, &x.Seller, &x.Buyer, &x.Duration, &x.Starts, &x.Amount, &x.State, &x.Payment) != nil {
+		if rows.Scan(&x.ID, &x.Seller, &x.Buyer, &x.Duration, &x.Starts, &x.Amount, &x.State, &x.Payment, &x.Currency) != nil {
 			problem(w, 503, "DATABASE_ERROR", "Bookings could not be loaded.")
 			return
 		}
@@ -98,9 +99,17 @@ func (a *API) getBooking(w http.ResponseWriter, r *http.Request) {
 		BuyerDone        bool      `json:"buyer_completed"`
 		SellerDone       bool      `json:"seller_completed"`
 		CancellationOpen bool      `json:"cancellation_open"`
+		Currency         string    `json:"currency"`
+		// BuyerFee is the payment fee the buyer paid on top of the price.
+		BuyerFee      int64   `json:"buyer_fee_minor"`
+		MeetingSource *string `json:"meeting_source,omitempty"`
+		// CancellationRequest is the buyer's open request to cancel outside
+		// the policy, for the seller to answer.
+		CancellationRequest *string `json:"cancellation_request_reason,omitempty"`
+		CancellationByMe    bool    `json:"cancellation_request_mine"`
 	}
 	var encryptedMeeting []byte
-	err := a.db.QueryRow(r.Context(), `SELECT b.id::text,sp.handle,sp.timezone,owner.display_name,b.buyer_name,b.duration_minutes,b.starts_at,b.gross_minor::text,b.state,b.payment_state,b.meeting_url,b.meeting_deadline,CASE WHEN sp.user_id=$2 THEN 'seller' ELSE 'buyer' END,b.issue_reason,b.buyer_completed_at IS NOT NULL,b.seller_completed_at IS NOT NULL,EXISTS(SELECT 1 FROM booking_cancellation_requests cr WHERE cr.booking_id=b.id AND cr.state='open') FROM bookings b JOIN seller_profiles sp ON sp.id=b.seller_id JOIN users owner ON owner.id=sp.user_id WHERE b.id=$1 AND (b.buyer_user_id=$2 OR sp.user_id=$2)`, id, u.ID).Scan(&out.ID, &out.Seller, &out.Timezone, &out.SellerName, &out.Buyer, &out.Duration, &out.Starts, &out.Amount, &out.State, &out.Payment, &encryptedMeeting, &out.MeetingDeadline, &out.Role, &out.Issue, &out.BuyerDone, &out.SellerDone, &out.CancellationOpen)
+	err := a.db.QueryRow(r.Context(), `SELECT b.id::text,sp.handle,sp.timezone,owner.display_name,b.buyer_name,b.duration_minutes,b.starts_at,b.gross_minor::text,b.state,b.payment_state,b.meeting_url,b.meeting_deadline,CASE WHEN sp.user_id=$2 THEN 'seller' ELSE 'buyer' END,b.issue_reason,b.buyer_completed_at IS NOT NULL,b.seller_completed_at IS NOT NULL,EXISTS(SELECT 1 FROM booking_cancellation_requests cr WHERE cr.booking_id=b.id AND cr.state='open'),b.currency::text,COALESCE((SELECT buyer_fee_minor FROM payment_attempts pa WHERE pa.booking_id=b.id AND pa.canonical_state='success' ORDER BY pa.created_at DESC LIMIT 1),0),b.meeting_source,(SELECT cr.reason FROM booking_cancellation_requests cr WHERE cr.booking_id=b.id AND cr.state='open' LIMIT 1),EXISTS(SELECT 1 FROM booking_cancellation_requests cr WHERE cr.booking_id=b.id AND cr.state='open' AND cr.requester_user_id=$2) FROM bookings b JOIN seller_profiles sp ON sp.id=b.seller_id JOIN users owner ON owner.id=sp.user_id WHERE b.id=$1 AND (b.buyer_user_id=$2 OR sp.user_id=$2)`, id, u.ID).Scan(&out.ID, &out.Seller, &out.Timezone, &out.SellerName, &out.Buyer, &out.Duration, &out.Starts, &out.Amount, &out.State, &out.Payment, &encryptedMeeting, &out.MeetingDeadline, &out.Role, &out.Issue, &out.BuyerDone, &out.SellerDone, &out.CancellationOpen, &out.Currency, &out.BuyerFee, &out.MeetingSource, &out.CancellationRequest, &out.CancellationByMe)
 	if errors.Is(err, pgx.ErrNoRows) {
 		problem(w, 404, "NOT_FOUND", "This booking is not available.")
 		return
@@ -172,10 +181,17 @@ func (a *API) bookingLifecycle(ctx context.Context, bookingID, userID, role stri
 	out["problem_deadline"] = problemDeadline
 	var issueOpen bool
 	var issueBy, resolution string
-	if err := a.db.QueryRow(ctx, `SELECT issue_reason IS NOT NULL AND issue_resolved_at IS NULL,COALESCE(issue_reported_by,''),COALESCE(issue_resolution,'') FROM bookings WHERE id=$1`, bookingID).Scan(&issueOpen, &issueBy, &resolution); err != nil {
+	var issueReason, sellerResponse string
+	var respondBy *time.Time
+	if err := a.db.QueryRow(ctx, `SELECT issue_reason IS NOT NULL AND issue_resolved_at IS NULL,COALESCE(issue_reported_by,''),COALESCE(issue_resolution,''),COALESCE(issue_reason,''),COALESCE(issue_seller_response,''),issue_respond_by FROM bookings WHERE id=$1`, bookingID).Scan(&issueOpen, &issueBy, &resolution, &issueReason, &sellerResponse, &respondBy); err != nil {
 		return nil, err
 	}
-	out["problem"] = map[string]any{"open": issueOpen, "reported_by": issueBy, "resolution": resolution}
+	problemOut := map[string]any{"open": issueOpen, "reported_by": issueBy, "resolution": resolution, "seller_response": sellerResponse, "respond_by": respondBy}
+	if issueOpen && issueBy == "buyer" && role == "seller" {
+		problemOut["reason"] = issueReason
+	}
+	out["problem"] = problemOut
+	out["can_answer_problem"] = issueOpen && issueBy == "buyer" && role == "seller" && sellerResponse == ""
 	out["can_report_problem"] = !issueOpen && (state == "confirmed" || state == "completed") && (role == "seller" || time.Now().Before(problemDeadline))
 	if role == "seller" {
 		rows, err := a.queryPayouts(ctx, `po.booking_id=$2`, bookingID)
@@ -202,8 +218,9 @@ func (a *API) getBookingReceipt(w http.ResponseWriter, r *http.Request) {
 	var hasSellerProfile bool
 	var starts, created, paidAt time.Time
 	var duration int
-	var gross, deduction, entitlement int64
-	err := a.db.QueryRow(r.Context(), `SELECT b.id::text,b.buyer_name,owner.display_name,b.starts_at,b.duration_minutes,b.gross_minor,b.currency,b.created_at,b.state,b.payment_state,COALESCE(pa.deduction_minor,0),COALESCE(pa.seller_entitlement_minor,0),COALESCE(p.merchant_reference,''),CASE WHEN b.buyer_user_id=$2 THEN 'buyer' ELSE 'seller' END,sp.handle,EXISTS(SELECT 1 FROM seller_profiles mine WHERE mine.user_id=$2),COALESCE(p.last_verified_at,b.created_at) FROM bookings b JOIN seller_profiles sp ON sp.id=b.seller_id JOIN users owner ON owner.id=sp.user_id LEFT JOIN payment_allocations pa ON pa.booking_id=b.id LEFT JOIN LATERAL (SELECT merchant_reference,last_verified_at FROM payment_attempts WHERE booking_id=b.id AND canonical_state='success' ORDER BY created_at DESC LIMIT 1) p ON true WHERE b.id=$1 AND (b.buyer_user_id=$2 OR sp.user_id=$2)`, r.PathValue("id"), u.ID).Scan(&id, &buyer, &seller, &starts, &duration, &gross, &currency, &created, &bookingState, &paymentState, &deduction, &entitlement, &reference, &role, &sellerHandle, &hasSellerProfile, &paidAt)
+	var gross, deduction, entitlement, buyerFee, refunded int64
+	var channel string
+	err := a.db.QueryRow(r.Context(), `SELECT b.id::text,b.buyer_name,owner.display_name,b.starts_at,b.duration_minutes,b.gross_minor,b.currency,b.created_at,b.state,b.payment_state,COALESCE(pa.deduction_minor,0),COALESCE(pa.seller_entitlement_minor,0),COALESCE(p.merchant_reference,''),CASE WHEN b.buyer_user_id=$2 THEN 'buyer' ELSE 'seller' END,sp.handle,EXISTS(SELECT 1 FROM seller_profiles mine WHERE mine.user_id=$2),COALESCE(p.last_verified_at,b.created_at),COALESCE(p.buyer_fee_minor,0),COALESCE(p.channel,''),COALESCE((SELECT sum(amount_minor) FROM refunds rf WHERE rf.booking_id=b.id AND rf.state='processed'),0)::bigint FROM bookings b JOIN seller_profiles sp ON sp.id=b.seller_id JOIN users owner ON owner.id=sp.user_id LEFT JOIN payment_allocations pa ON pa.booking_id=b.id LEFT JOIN LATERAL (SELECT merchant_reference,last_verified_at,buyer_fee_minor,channel FROM payment_attempts WHERE booking_id=b.id AND canonical_state='success' ORDER BY created_at DESC LIMIT 1) p ON true WHERE b.id=$1 AND (b.buyer_user_id=$2 OR sp.user_id=$2)`, r.PathValue("id"), u.ID).Scan(&id, &buyer, &seller, &starts, &duration, &gross, &currency, &created, &bookingState, &paymentState, &deduction, &entitlement, &reference, &role, &sellerHandle, &hasSellerProfile, &paidAt, &buyerFee, &channel, &refunded)
 	if errors.Is(err, pgx.ErrNoRows) {
 		problem(w, 404, "NOT_FOUND", "This booking is not available.")
 		return
@@ -212,11 +229,19 @@ func (a *API) getBookingReceipt(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "RECEIPT_UNAVAILABLE", "The receipt could not be loaded.")
 		return
 	}
-	if paymentState != "paid" || entitlement == 0 {
+	if (paymentState != "paid" && paymentState != "refunded" && paymentState != "partially_refunded") || entitlement == 0 {
 		problem(w, 404, "RECEIPT_NOT_AVAILABLE", "No verified payment receipt is available for this booking.")
 		return
 	}
-	jsonOut(w, 200, map[string]any{"id": id, "buyer_name": buyer, "seller_name": seller, "starts_at": starts, "duration_minutes": duration, "currency": strings.TrimSpace(currency), "gross_minor": gross, "deduction_minor": deduction, "seller_entitlement_minor": entitlement, "payment_state": paymentState, "booking_state": bookingState, "paid_at": paidAt, "booked_at": created, "provider_reference": reference, "viewer_role": role, "seller_handle": sellerHandle, "has_seller_profile": hasSellerProfile})
+	out := map[string]any{"id": id, "buyer_name": buyer, "seller_name": seller, "starts_at": starts, "duration_minutes": duration, "currency": strings.TrimSpace(currency), "gross_minor": gross, "payment_state": paymentState, "booking_state": bookingState, "paid_at": paidAt, "booked_at": created, "provider_reference": reference, "viewer_role": role, "seller_handle": sellerHandle, "has_seller_profile": hasSellerProfile, "refunded_minor": refunded, "payment_method": channel}
+	if role == "buyer" {
+		// The buyer sees what they paid: the price and the payment fee on top.
+		out["fee_minor"], out["total_minor"] = buyerFee, gross+buyerFee
+	} else {
+		// The seller sees their share; the buyer's payment fee is not theirs.
+		out["deduction_minor"], out["seller_entitlement_minor"] = deduction, entitlement
+	}
+	jsonOut(w, 200, out)
 }
 
 func (a *API) listReschedules(w http.ResponseWriter, r *http.Request) {
@@ -547,7 +572,9 @@ func (a *API) updateMeetingLink(w http.ResponseWriter, r *http.Request) {
 
 // reportBookingIssue records a problem with a booking. A buyer can report
 // one until the dispute window after the session closes; that holds the
-// seller's payout until WantMyTime has looked at it.
+// seller's payout while the seller answers (refund, part refund, or
+// disagree). No answer in time refunds the buyer; only a disagreement goes
+// to WantMyTime.
 func (a *API) reportBookingIssue(w http.ResponseWriter, r *http.Request) {
 	u, ok, guest, scope := a.buyerActor(w, r)
 	if !ok {
@@ -592,7 +619,12 @@ func (a *API) reportBookingIssue(w http.ResponseWriter, r *http.Request) {
 		problem(w, 409, "PROBLEM_WINDOW_CLOSED", "Problems must be reported within "+humanDuration(disputeWindow())+" of the end of the booking.")
 		return
 	}
-	tag, err := tx.Exec(r.Context(), `UPDATE bookings SET issue_reason=$1,issue_created_at=now(),issue_resolved_at=NULL,issue_resolution=NULL,issue_reported_by=$3 WHERE id=$2 AND (issue_reason IS NULL OR issue_resolved_at IS NOT NULL)`, strings.TrimSpace(in.Reason), b.BookingID, role)
+	var respondBy *time.Time
+	if role == "buyer" {
+		due := time.Now().Add(problemResponseWindow())
+		respondBy = &due
+	}
+	tag, err := tx.Exec(r.Context(), `UPDATE bookings SET issue_reason=$1,issue_created_at=now(),issue_resolved_at=NULL,issue_resolution=NULL,issue_reported_by=$3,issue_respond_by=$4,issue_seller_response=NULL,issue_seller_note=NULL,issue_disputed_at=NULL WHERE id=$2 AND (issue_reason IS NULL OR issue_resolved_at IS NOT NULL)`, strings.TrimSpace(in.Reason), b.BookingID, role, respondBy)
 	if err != nil {
 		problem(w, 503, "DATABASE_ERROR", "The problem could not be saved.")
 		return
@@ -602,6 +634,10 @@ func (a *API) reportBookingIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if role == "buyer" {
+		if err = enqueuePush(r.Context(), tx, b.BookingID, b.SellerUserID, "problem_reported_seller", b.BookingID+":push:problem:"+time.Now().UTC().Format(time.RFC3339Nano), time.Now()); err != nil {
+			problem(w, 503, "NOTIFICATION_QUEUE_ERROR", "The problem could not be saved.")
+			return
+		}
 		if err = enqueueBookingEvent(r.Context(), tx, b.BookingID, b.SellerUserID, "problem_reported_seller", b.BookingID+":problem:"+time.Now().UTC().Format(time.RFC3339Nano), nil); err != nil {
 			problem(w, 503, "NOTIFICATION_QUEUE_ERROR", "The problem could not be saved.")
 			return
@@ -673,7 +709,11 @@ func (a *API) requestCancellation(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "DATABASE_ERROR", "The cancellation request could not be saved.")
 		return
 	}
-	jsonOut(w, 201, map[string]any{"id": id, "state": "open", "message": "Your request has been recorded. The booking remains unchanged while the request is reviewed."})
+	message := "Your request has gone to the seller. If they agree, they cancel the booking and you get a full refund. If not, the booking stays as it is."
+	if audience == "buyer" {
+		message = "Your request has gone to the buyer. The booking stays as it is unless one of you cancels it."
+	}
+	jsonOut(w, 201, map[string]any{"id": id, "state": "open", "message": message})
 }
 
 func (a *API) completeBooking(w http.ResponseWriter, r *http.Request) {

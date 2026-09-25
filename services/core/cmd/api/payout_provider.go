@@ -34,14 +34,17 @@ type payoutBank struct {
 }
 
 type payoutTransferRequest struct {
-	BankCode      string
-	AccountNumber string
-	AccountName   string
-	Email         string
-	Reference     string
-	Reason        string
-	Currency      string
-	AmountMinor   int64
+	// DestinationType is bank_account or mobile_money. For mobile money,
+	// BankCode is the network operator and AccountNumber the wallet number.
+	DestinationType string
+	BankCode        string
+	AccountNumber   string
+	AccountName     string
+	Email           string
+	Reference       string
+	Reason          string
+	Currency        string
+	AmountMinor     int64
 }
 
 type payoutTransfer struct {
@@ -105,7 +108,12 @@ func (p koraPayouts) resolveAccount(ctx context.Context, country, bankCode, acco
 			AccountName string `json:"account_name"`
 		} `json:"data"`
 	}
-	body := map[string]string{"bank": bankCode, "account": accountNumber, "currency": country}
+	// Kora names the account's currency here, not its country.
+	currency := "NGN"
+	if m, ok := marketFor(country); ok {
+		currency = m.Currency
+	}
+	body := map[string]string{"bank": bankCode, "account": accountNumber, "currency": currency}
 	if err := p.c.request(ctx, http.MethodPost, "/api/v1/misc/banks/resolve", body, true, &out); err != nil {
 		if providerRejected(err) || providerNotFound(err) {
 			return "", errPayoutRejected
@@ -146,11 +154,17 @@ func (p koraPayouts) transfer(ctx context.Context, in payoutTransferRequest) (pa
 	if in.AmountMinor <= 0 || in.AccountNumber == "" || in.BankCode == "" || !validReference(in.Reference) {
 		return payoutTransfer{}, errors.New("invalid transfer request")
 	}
-	body := map[string]any{"reference": in.Reference, "destination": map[string]any{
+	destination := map[string]any{
 		"type": "bank_account", "amount": majorAmount(in.AmountMinor), "currency": in.Currency, "narration": in.Reason,
 		"bank_account": map[string]string{"bank": in.BankCode, "account": in.AccountNumber},
 		"customer":     map[string]string{"name": in.AccountName, "email": in.Email},
-	}}
+	}
+	if in.DestinationType == "mobile_money" {
+		delete(destination, "bank_account")
+		destination["type"] = "mobile_money"
+		destination["mobile_money"] = map[string]string{"operator": in.BankCode, "mobile_number": in.AccountNumber}
+	}
+	body := map[string]any{"reference": in.Reference, "destination": destination}
 	var out struct {
 		Data koraTransferData `json:"data"`
 	}
@@ -224,15 +238,8 @@ func (a *API) payoutBanks(ctx context.Context, country string) ([]payoutBank, er
 	return banks, nil
 }
 
-// payoutCountries are the countries sellers can be paid in, with the
-// currency and account-number rules. Nigeria first; others follow as WantMyTime
-// opens them.
-var payoutCountries = map[string]struct {
-	Currency      string
-	AccountDigits int // 0: 6-20 digits
-}{
-	"NG": {Currency: "NGN", AccountDigits: 10},
-}
+// The countries sellers can be paid in, with their currency and account
+// rules, are the enabled markets (markets.go).
 
 // --- timing --------------------------------------------------------------------------
 

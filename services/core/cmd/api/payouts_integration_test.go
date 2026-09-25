@@ -100,7 +100,7 @@ func TestPayoutWaitsForTheDisputeWindowAndHoldsOnProblems(t *testing.T) {
 			buyerMsgs = append(buyerMsgs, m)
 		}
 	}
-	if msg := findMessage(t, sellerMsgs, "is on its way to your bank"); !strings.Contains(msg.Text, "₦6,650") || !strings.Contains(msg.Text, "••6789") {
+	if msg := findMessage(t, sellerMsgs, "is on its way to you"); !strings.Contains(msg.Text, "₦6,650") || !strings.Contains(msg.Text, "••6789") {
 		t.Fatalf("payout email:\n%s", msg.Text)
 	}
 	if msg := findMessage(t, buyerMsgs, "Update on the reported problem"); !strings.Contains(msg.Text, "Your refund: ₦3,000") {

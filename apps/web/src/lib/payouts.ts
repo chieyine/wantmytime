@@ -1,5 +1,5 @@
 // Shared wording for payouts on the Money and Payouts pages.
-export type Payout = { id: string; booking_id: string; buyer_name: string; state: string; entitlement_minor: number; amount_minor: number | null; transfer_minor?: number; recovery_minor: number; release_at: string; paid_at: string | null; bank_name: string; account_last4: string; hold: string; hold_text?: string; note?: string };
+export type Payout = { currency?: string; id: string; booking_id: string; buyer_name: string; state: string; entitlement_minor: number; amount_minor: number | null; transfer_minor?: number; recovery_minor: number; release_at: string; paid_at: string | null; bank_name: string; account_last4: string; hold: string; hold_text?: string; note?: string };
 
 export const when = (v: string) => new Date(v).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 
@@ -8,9 +8,9 @@ export function payoutStatus(p: Payout): { label: string; detail: string; tone: 
 		case 'paid':
 			return { label: 'Paid', detail: `Sent ${p.paid_at ? when(p.paid_at) : ''} to ${p.bank_name} ••${p.account_last4}`, tone: '' };
 		case 'processing':
-			return { label: 'Sending', detail: p.note || 'On its way to your bank.', tone: '' };
+			return { label: 'Sending', detail: p.note || 'On its way to you.', tone: '' };
 		case 'failed':
-			return { label: 'Needs attention', detail: 'The transfer didn’t go through. We’ve been alerted and will send it again once it’s fixed.', tone: 'alert-critical' };
+			return { label: 'Needs attention', detail: 'The transfer didn’t go through. Check your payout details: we send it again automatically as soon as they’re updated.', tone: 'alert-critical' };
 		case 'cancelled':
 			return { label: 'No payout', detail: 'The buyer was refunded in full.', tone: '' };
 		default:

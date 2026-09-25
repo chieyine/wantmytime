@@ -7,7 +7,7 @@ Updated: 2026-09-24. This is not ready for public launch or real payment data.
 - Profile edits and private bookings/offers require authenticated ownership/participant scope. Booking and offer submissions use idempotency and PostgreSQL transactions; schedule overlaps are constrained in the database.
 - Meeting URLs are HTTPS-only, encrypted at rest with a separate key, returned only to booking participants and never placed in public pages or calendar files.
 - Ops requires verified identity, an active permission grant and recent MFA. TOTP secrets are encrypted at rest, repeated bad codes lock the account temporarily, sensitive account/session/issue actions require reasons and audit in the same transaction, and audit rows reject update/delete at the database layer.
-- Payment verification stores only the issuing country and brand of the paying card, never card numbers, BINs or last-four digits. Booking emails never include the other person's email address, and cancellation reasons stay with the review team. Names in email subjects are stripped of control characters.
+- WantMyTime takes no card payments and never handles card data. Booking emails never include the other person's email address, and cancellation reasons stay with the review team. Names in email subjects are stripped of control characters.
 - Google Calendar:
   - The connection uses OAuth with PKCE. The `state` value is single-use, expires after 10 minutes and is bound to the signed-in account that started the flow.
   - Only the free/busy and owned-events scopes are accepted. A partial grant is revoked.
@@ -21,8 +21,8 @@ Updated: 2026-09-24. This is not ready for public launch or real payment data.
   - Operator refund actions need their own permission, a reason, and an audit record in the same transaction.
 - Payments: Kora webhooks must carry a valid HMAC-SHA256 signature of their `data` object; nothing in a webhook is trusted beyond the reference, and every charge is confirmed by looking it up with Kora.
 - Payouts:
-  - Money only goes to the seller's own bank account, saved after the bank confirms the account name. The account number is encrypted (AES-GCM, bound to the seller); only the last four digits, the bank and the name are readable.
-  - A replaced bank account waits 24 hours before it is paid into; account lookups are limited to 20 an hour per person; every change is audited.
+  - Money only goes to the payout account the seller saved: a bank account (in Nigeria saved only after the bank confirms the account name; elsewhere the seller types the name on the account) or a mobile money wallet in Ghana or Kenya. The account number is encrypted (AES-GCM, bound to the seller); only the last four digits, the bank and the name are readable.
+  - A replaced payout account waits 24 hours before it is paid into (and before failed payouts are retried into it); account lookups are limited to 20 an hour per person; every change is audited.
   - Every transfer attempt has a unique reference and is looked up before sending, so a retry never pays twice. Operators cannot choose where a payout goes or mark one paid; they can only retry a failed one to the seller's current account, with a reason.
   - A buyer's problem report holds the payout; the buyer's reporting window closes 2 hours after the session (configurable).
 - Reviews are limited to the buyer of a booking that took place. They show only the reviewer's first name, and hiding them is audited.

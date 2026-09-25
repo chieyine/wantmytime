@@ -167,7 +167,10 @@ func (a *API) publicReviews(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, map[string]any{"id": id, "reviewer": name, "rating": rating, "body": body, "seller_reply": reply, "created_at": created, "replied_at": replied})
 	}
-	w.Header().Set("Cache-Control", "public, max-age=60")
+	if rows.Err() != nil {
+		problem(w, 503, "DATABASE_ERROR", "Reviews could not be read.")
+		return
+	}
 	jsonOut(w, 200, map[string]any{"average": summary.Average, "count": summary.Count, "reviews": items})
 }
 
@@ -192,6 +195,10 @@ func (a *API) opsReviews(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		items = append(items, map[string]any{"id": id, "booking_id": booking, "seller": handle, "reviewer": name, "rating": rating, "body": body, "seller_reply": reply, "created_at": created, "hidden_at": hidden, "hidden_reason": hiddenReason})
+	}
+	if rows.Err() != nil {
+		problem(w, 503, "REVIEWS_UNAVAILABLE", "Reviews could not be read.")
+		return
 	}
 	jsonOut(w, 200, map[string]any{"reviews": items})
 }
@@ -255,6 +262,18 @@ func (a *API) runLifecycleWorker(ctx context.Context) {
 		}
 		if payoutErr := a.processPayouts(ctx); err == nil {
 			err = payoutErr
+		}
+		if requestErr := a.closeStartedCancellationRequests(ctx); err == nil {
+			err = requestErr
+		}
+		if linkErr := a.createMissingMeetingLinks(ctx); err == nil {
+			err = linkErr
+		}
+		if problemErr := a.resolveUnansweredProblems(ctx); err == nil {
+			err = problemErr
+		}
+		if retryErr := a.autoRetryFailures(ctx); err == nil {
+			err = retryErr
 		}
 		if retentionErr := a.maybeApplyRetention(ctx, time.Now()); err == nil {
 			err = retentionErr

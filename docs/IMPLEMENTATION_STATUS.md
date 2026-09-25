@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated: 2026-09-23
+Updated: 2026-09-25
 
 Statuses distinguish working code from external approval and unbuilt scope. “Local verified” does not mean production-ready.
 
@@ -36,7 +36,7 @@ Statuses distinguish working code from external approval and unbuilt scope. “L
 | Security headers | Implemented and browser-checked: nonce-based CSP on every page, HSTS in production, frame, referrer, permissions and opener policies; API `default-src 'none'`. No CSP violations on the public, app and settings pages in Chromium. |
 | Cloudflare R2 | Implemented and tested against a fake S3 endpoint; request signing matches botocore's reference output. Not yet run against a real R2 bucket. |
 | Production configuration | Start-up refuses weak, placeholder, reused or missing secrets and leftover test switches. |
-| Data rights (NDPA) | Data export, account deletion with safety checks, 180-day link hold, hourly retention sweep and a rewritten privacy notice (needs legal review and company details). |
+| Data rights (NDPA) | Data export, account deletion with safety checks, 180-day link hold, hourly retention sweep and a rewritten privacy notice (final, effective 25 September 2026). |
 
 ## Verification evidence
 
@@ -65,7 +65,7 @@ Statuses distinguish working code from external approval and unbuilt scope. “L
 ## External launch gates
 
 - Owner/legal approval: operating entity, terms/privacy/acceptable use, seller obligations/remedies, fee interpretation and transaction limits.
-- Payments moved from Paystack to Kora on 2026-09-24 (escrow and payouts; see docs/MONEY_FLOW.md). Kora: merchant approval, sandbox keys and sandbox evidence. Live collection remains disabled.
+- Payments moved from Paystack to Kora on 2026-09-24 (collection, holding and payouts; see docs/MONEY_FLOW.md). Kora: merchant approval, sandbox keys and sandbox evidence. Live collection remains disabled.
 - Email: verified sender domain and provider credentials.
 - Owner operations setup: deploy secure `OPS_MFA_ENCRYPTION_KEY` and `MEETING_LINK_ENCRYPTION_KEY`, verify owner account by email, then run the documented bootstrap command with an authenticator secret.
 - Hosting: approved production SvelteKit adapter/runtime, API deployment, PostgreSQL provisioning, managed secrets, backups and restore rehearsal.
@@ -121,3 +121,15 @@ No tests were run in this fix pass. The local source changes and migrations have
 - Current code changes: seller editor reuses the public profile component for private preview; account security lists active session metadata and revokes other sessions; cancellation review is connected to MFA-gated ops; avatar upload/removal is authenticated, bounded, dimension-checked, re-encoded without source metadata and cache-versioned; share page reads authenticated profile and configured origin; public SVG artwork includes escaped profile name and public fixed price only. Participant cancellation requests and MFA-gated audited resolution do not change booking/payment state. Client events are allowlisted, discard arbitrary client properties, cannot write financial events and use a keyed account hash; operations show only seven-day aggregates. Package registry access was unnecessary: the raster PNG route uses the built-in Node compression runtime and a local bitmap font. Its output still needs visual review.
 - After seller preview, avatar/cache-version, cancellation, event, account-session and ops updates: `npm run check` passed (0 warnings/errors), `npm run build` passed using adapter-node, `GOCACHE=/private/tmp/aside-go-cache GOPROXY=off go build ./cmd/api` passed, `docker compose config --quiet` passed, and `api/openapi.yaml` parsed (49 paths). Migration 005–007 SQL has not been runtime-applied after PostgreSQL was denied shared-memory attachment; Docker engine is unavailable. No project database was changed.
 - Provider checkout now has an authenticated hosted initialization path, frozen fee snapshot, server verification return, durable signature-checked webhook inbox, bounded retry/recovery worker, atomic direct-split paid-booking conversion, verified subaccount/split checks, exception handling and ledger/outbox posting. Provider event backlog and audited retries are available through MFA-gated operations. Fixed-price and agreed-offer checkout use the hosted URL only when server gates report enabled. Go build/vet, Svelte check/build, Compose config and OpenAPI parse pass. `PAYMENTS_ENABLED=false`, `LIVE_PAYMENTS_ENABLED=false`, and no provider secrets are present in `.env.example`; no charge was initiated. Sandbox checkout, migrations 007, database concurrency and provider settlement behavior remain unverified in this environment.
+
+## Full audit, flow pass and multiple countries (2026-09-25)
+
+| Area | Status |
+|---|---|
+| File-by-file audit | Every file in the repository reviewed; findings and fixes in [FILE_BY_FILE_AUDIT.md](FILE_BY_FILE_AUDIT.md). |
+| Buyer and seller flows | Every flow traced end to end in [FLOW_WALKTHROUGH.md](FLOW_WALKTHROUGH.md); every break found was fixed (offer checkout from an access link, Kora account-name check currency, payout holds from cancellation requests, late payments rebooked when the slot is still free, automatic refunds for payments that can't become bookings, payout auto-retry, automatic call links, payment return polling, receipts for refunded bookings). |
+| Countries | Migration 022 plus `markets.go`: seller country and currency, per-currency channels, limits and fee schedules, mobile money payouts (Ghana, Kenya), all timezones, country picker at sign-up, `/api/v1/markets`. Nigeria on by default; others switch on with `SELLER_COUNTRIES`. |
+| Verification | Go build, vet and gofmt pass; svelte-check 0 errors; web build passes; OpenAPI 0.3.0 parses (110 paths). Tests were not run in this pass by request. |
+| Remaining | Owner-only items in [LAUNCH_CHECKLIST.md](LAUNCH_CHECKLIST.md). |
+| Automatic operations | Migration 023 and `automation.go`: seller-answered problem reports with automatic refund on silence, automatic retries for refunds, payment events, emails and payouts, automatic refunds of wrong-amount payments, refunds on by default. Only disputes need the founder. |
+| Phone notifications | Self-hosted web push (migration 024, `webpush.go`, `push.go`, service worker): new booking and problem report for sellers, call-in-10-minutes for both. Needs `VAPID_*` keys; off without them. |

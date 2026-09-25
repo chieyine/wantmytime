@@ -96,7 +96,9 @@ func refundShares(amount, gross, deduction int64) (platform, seller int64) {
 // refund waits for an operator, who can approve it or record that it was
 // made in the Kora dashboard.
 func (a *API) refundsEnabled() bool {
-	return os.Getenv("REFUNDS_ENABLED") == "true" && a.providerEnvironmentConfigured()
+	// On by default: refunds go to Kora by themselves. REFUNDS_ENABLED=false
+	// holds each one for approval in Operations instead.
+	return os.Getenv("REFUNDS_ENABLED") != "false" && a.providerEnvironmentConfigured()
 }
 
 // recoveryMaxBps caps how much of a seller's share on one booking goes to

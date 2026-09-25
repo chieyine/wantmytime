@@ -205,7 +205,7 @@ func TestSellerCancellationBeforePayoutCancelsIt(t *testing.T) {
 	}
 	refundID := scalar[string](t, `SELECT id::text FROM refunds WHERE booking_id=$1`, first)
 	// The seller cancelled, so the buyer's transfer fee comes back too, at the platform's cost.
-	if got := scalar[string](t, `SELECT amount_minor||'/'||platform_share_minor||'/'||seller_share_minor FROM refunds WHERE id=$1`, refundID); got != "1015229/65229/950000" {
+	if got := scalar[string](t, `SELECT amount_minor||'/'||platform_share_minor||'/'||seller_share_minor FROM refunds WHERE id=$1`, refundID); got != "1015000/65000/950000" {
 		t.Fatalf("seller-cancel refund amounts %s", got)
 	}
 	if !journalBalanced(t, "refund", refundID) {
@@ -235,6 +235,7 @@ func TestRefundsWaitForOperatorsWhenAutomaticRefundsAreOff(t *testing.T) {
 	h := newHarness(t)
 	fake := newFakeKora(t)
 	enablePayments(t, fake)
+	t.Setenv("REFUNDS_ENABLED", "false")
 	s := h.newSeller("fixed")
 	_, bookingID, _ := paidBooking(t, h, fake, s, h.slotOn(s.handle, 2, 0))
 	s.client.expect(200, "POST", "/api/v1/bookings/"+bookingID+"/cancel", map[string]any{"expected_refund_minor": 1000000})

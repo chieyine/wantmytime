@@ -432,21 +432,21 @@ func newFakeKora(t *testing.T) *fakeKora {
 				fail(400, "Duplicate reference")
 				return
 			}
-			if in["merchant_bears_cost"] != true {
-				t.Errorf("WantMyTime must bear the processing cost")
+			if in["merchant_bears_cost"] != false {
+				t.Errorf("the buyer must bear Kora's fee")
 			}
 			customer, _ := in["customer"].(map[string]any)
 			channel := "bank_transfer"
 			if path == "/charges/initialize" {
-				channel = "card"
+				channel = "pay_with_bank"
 			}
 			c := &fakeCharge{amount: readNaira(in["amount"]), fee: f.fee, status: "processing", channel: channel, cardCountry: f.cardCountry, email: fmt.Sprint(customer["email"])}
 			f.charges[ref] = c
-			if channel == "card" {
+			if channel == "pay_with_bank" {
 				ok(map[string]any{"reference": ref, "checkout_url": "https://checkout.korapay.com/fake/" + ref})
 				return
 			}
-			ok(map[string]any{"reference": ref, "currency": "NGN", "amount": in["amount"], "amount_expected": in["amount"], "fee": naira(c.fee), "status": "processing",
+			ok(map[string]any{"reference": ref, "currency": "NGN", "amount": in["amount"], "amount_expected": naira(c.amount + c.fee), "fee": naira(c.fee), "status": "processing",
 				"bank_account": map[string]any{"account_name": "WantMyTime Checkout", "account_number": "99" + ref[len(ref)-8:], "bank_name": "wema", "bank_code": "035", "expiry_date_in_utc": time.Now().Add(30 * time.Minute).UTC().Format(time.RFC3339Nano)}})
 		case r.Method == http.MethodGet && strings.HasPrefix(path, "/charges/"):
 			ref := strings.TrimPrefix(path, "/charges/")
@@ -460,9 +460,6 @@ func newFakeKora(t *testing.T) *fakeKora {
 				paid = c.amount
 			}
 			data := map[string]any{"reference": ref, "status": c.status, "amount": naira(c.amount), "amount_paid": naira(paid), "fee": naira(c.fee), "vat": "0.00", "currency": "NGN", "payment_method": c.channel}
-			if c.channel == "card" {
-				data["card"] = map[string]any{"issuer_country": c.cardCountry}
-			}
 			ok(data)
 		case r.Method == http.MethodPost && path == "/refunds/initiate":
 			f.refundCalls++
@@ -505,7 +502,7 @@ func newFakeKora(t *testing.T) *fakeKora {
 			ok([]map[string]any{{"name": "Guaranty Trust Bank", "code": "058"}, {"name": "Access Bank", "code": "044"}})
 		case r.Method == http.MethodPost && path == "/misc/banks/resolve":
 			number := fmt.Sprint(in["account"])
-			if strings.HasPrefix(number, "000") || in["currency"] != "NG" {
+			if strings.HasPrefix(number, "000") || in["currency"] != "NGN" {
 				fail(400, "Unable to resolve bank account")
 				return
 			}
@@ -545,10 +542,11 @@ func newFakeKora(t *testing.T) *fakeKora {
 	return f
 }
 
-// payFull marks a charge as paid in full: the price plus the transfer fee.
+// payFull marks a charge as paid in full: the price plus Kora's fee, which
+// the buyer bears.
 func (f *fakeKora) payFull(reference string) {
 	f.mu.Lock()
-	amount := f.charges[reference].amount
+	amount := f.charges[reference].amount + f.charges[reference].fee
 	f.mu.Unlock()
 	f.pay(reference, amount)
 }
@@ -559,21 +557,21 @@ func (f *fakeKora) pay(reference string, paid int64) {
 	defer f.mu.Unlock()
 	c := f.charges[reference]
 	c.paid = paid
-	if paid >= c.amount {
+	if paid >= c.amount+c.fee {
 		c.status = "success"
 	}
 }
 
 func enablePayments(t *testing.T, fake *fakeKora) {
 	for key, value := range map[string]string{
-		"PAYMENTS_ENABLED": "true", "FEE_POLICY_APPROVED": "true", "PAYMENT_ROUTE": "escrow_payout", "FEE_BPS": "500",
+		"PAYMENTS_ENABLED": "true", "FEE_POLICY_APPROVED": "true", "PAYMENT_ROUTE": "hold_payout", "FEE_BPS": "500",
 		"FEE_POLICY_MODE": "all_in_seller_deduction", "MIN_CHARGE_MINOR": "100", "MAX_CHARGE_MINOR": "100000000",
-		"APPROVED_PAYMENT_CHANNELS": "bank_transfer,card", "PAYMENT_ENV": "sandbox", "KORA_SECRET_KEY": fakeKoraSecret, "KORA_PUBLIC_KEY": "pk_test_integration",
+		"APPROVED_PAYMENT_CHANNELS": "bank_transfer,pay_with_bank", "PAYMENT_ENV": "sandbox", "KORA_SECRET_KEY": fakeKoraSecret, "KORA_PUBLIC_KEY": "pk_test_integration",
 		"CHECKOUTS_PAUSED": "false", "KORA_API_BASE": fake.server.URL, "LOCAL_PAYMENT_SIMULATOR": "false",
 	} {
 		t.Setenv(key, value)
 	}
-	for _, channel := range []string{"bank_transfer", "card"} {
+	for _, channel := range []string{"bank_transfer", "pay_with_bank"} {
 		if _, err := itPool.Exec(context.Background(), `INSERT INTO provider_fee_schedules(id,provider,currency,channel,percent_bps,fixed_minor,effective_from,approved_at) SELECT gen_random_uuid(),'kora','NGN',$1,150,0,now()-interval '1 day',now() WHERE NOT EXISTS (SELECT 1 FROM provider_fee_schedules WHERE provider='kora' AND channel=$1)`, channel); err != nil {
 			t.Fatal(err)
 		}
@@ -634,7 +632,7 @@ func TestPaidBookingByBankTransfer(t *testing.T) {
 	checkout := buyer.expect(200, "POST", "/api/v1/quotes/"+quoteID+"/checkout", "{}")
 	reference := checkout["reference"].(string)
 	transfer := checkout["transfer"].(map[string]any)
-	if checkout["method"] != "bank_transfer" || transfer["bank_name"] != "Wema Bank" || transfer["amount_minor"] != float64(1015229) || checkout["fee_minor"] != float64(15229) || checkout["price_minor"] != float64(1000000) || transfer["account_number"] == "" {
+	if checkout["method"] != "bank_transfer" || transfer["bank_name"] != "Wema Bank" || transfer["amount_minor"] != float64(1015000) || checkout["fee_minor"] != float64(15000) || checkout["price_minor"] != float64(1000000) || transfer["account_number"] == "" {
 		t.Fatalf("unexpected checkout %v", checkout)
 	}
 	// Asking again shows the same account instead of creating a second one.
@@ -663,7 +661,7 @@ func TestPaidBookingByBankTransfer(t *testing.T) {
 		t.Fatal(err)
 	}
 	bookingID := scalar[string](t, `SELECT id::text FROM bookings WHERE quote_id=$1 AND payment_state='paid'`, quoteID)
-	if got := scalar[string](t, `SELECT channel||'/'||paid_minor FROM payment_attempts WHERE merchant_reference=$1`, reference); got != "bank_transfer/1015229" {
+	if got := scalar[string](t, `SELECT channel||'/'||paid_minor FROM payment_attempts WHERE merchant_reference=$1`, reference); got != "bank_transfer/1015000" {
 		t.Fatalf("attempt %s", got)
 	}
 	if got := scalar[string](t, `SELECT state FROM provider_events WHERE provider_reference=$1`, reference); got != "processed" {
@@ -704,7 +702,7 @@ func TestTransferOnlyRefusesCards(t *testing.T) {
 	if methods := buyer.expect(200, "GET", "/api/v1/quotes/"+quoteID, nil)["payment_methods"].([]any); len(methods) != 1 || methods[0] != "bank_transfer" {
 		t.Fatalf("payment methods %v", methods)
 	}
-	if res := buyer.do("POST", "/api/v1/quotes/"+quoteID+"/checkout", map[string]string{"method": "card"}); res.Status != 422 || !strings.Contains(string(res.Body), "METHOD_NOT_AVAILABLE") {
+	if res := buyer.do("POST", "/api/v1/quotes/"+quoteID+"/checkout", map[string]string{"method": "card"}); res.Status != 422 {
 		t.Fatalf("card must be refused: %d %s", res.Status, res.Body)
 	}
 	if got := buyer.expect(200, "POST", "/api/v1/quotes/"+quoteID+"/checkout", "{}"); got["method"] != "bank_transfer" {
@@ -712,7 +710,7 @@ func TestTransferOnlyRefusesCards(t *testing.T) {
 	}
 }
 
-func TestCardFallbackAndDoublePayment(t *testing.T) {
+func TestPayWithBankFallbackAndDoublePayment(t *testing.T) {
 	h := newHarness(t)
 	fake := newFakeKora(t)
 	enablePayments(t, fake)
@@ -721,23 +719,20 @@ func TestCardFallbackAndDoublePayment(t *testing.T) {
 	quote := buyer.expect(201, "POST", "/api/v1/quotes", map[string]any{"seller": s.handle, "name": "Ada Buyer", "duration_minutes": 30, "starts_at": h.slot(s.handle, 0)}, "Idempotency-Key", idempotencyKey())
 	quoteID := quote["id"].(string)
 	transfer := buyer.expect(200, "POST", "/api/v1/quotes/"+quoteID+"/checkout", map[string]string{"method": "bank_transfer"})["reference"].(string)
-	card := buyer.expect(200, "POST", "/api/v1/quotes/"+quoteID+"/checkout", map[string]string{"method": "card"})
-	if !strings.HasPrefix(card["authorization_url"].(string), "https://checkout.korapay.com/") || card["reference"] == transfer {
-		t.Fatalf("card checkout %v", card)
+	bank := buyer.expect(200, "POST", "/api/v1/quotes/"+quoteID+"/checkout", map[string]string{"method": "pay_with_bank"})
+	if !strings.HasPrefix(bank["authorization_url"].(string), "https://checkout.korapay.com/") || bank["reference"] == transfer {
+		t.Fatalf("pay with bank checkout %v", bank)
 	}
-	cardRef := card["reference"].(string)
-	fake.mu.Lock()
-	fake.cardCountry = "NG"
-	fake.mu.Unlock()
-	fake.payFull(cardRef)
-	paid := buyer.expect(200, "POST", "/api/v1/quotes/"+quoteID+"/verify-payment", map[string]string{"reference": cardRef})
+	bankRef := bank["reference"].(string)
+	fake.payFull(bankRef)
+	paid := buyer.expect(200, "POST", "/api/v1/quotes/"+quoteID+"/verify-payment", map[string]string{"reference": bankRef})
 	bookingID, _ := paid["booking_id"].(string)
 	if bookingID == "" {
-		t.Fatalf("card payment %v", paid)
+		t.Fatalf("pay with bank payment %v", paid)
 	}
-	// Card money settles later, so the payout waits for it too.
+	// Pay-with-bank money settles later, so the payout waits for it too.
 	if early := scalar[bool](t, `SELECT funds_available_at > now()+interval '20 hours' FROM seller_payouts WHERE booking_id=$1`, bookingID); !early {
-		t.Fatal("card funds should not be treated as available at once")
+		t.Fatal("pay with bank funds should not be treated as available at once")
 	}
 	// The buyer also completes the transfer: that second payment is flagged for a refund.
 	fake.payFull(transfer)

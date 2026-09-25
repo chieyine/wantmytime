@@ -32,7 +32,7 @@ This file summarizes code currently present in the Go API and PostgreSQL migrati
   - A seller cancellation always refunds in full.
   - The confirm step must match the refund amount the person was shown, so a refund that drops in between is never a surprise.
   - Cancelling releases the time, cancels pending emails and reschedule requests, removes the calendar event, and emails both people with a calendar cancellation.
-  - A buyer outside the refund window can still send a request for an exception, which operations review.
+  - A buyer outside the refund window can ask the seller for a full refund instead (`booking_cancellation_requests`). The seller is emailed and sees the request on the booking; saying yes is cancelling (full refund). The request never holds the payout and closes itself (`resolved`) when the booking time arrives or the booking is cancelled. Operations can still see and close it.
 - Refunds: `pending_approval | queued → submitted → processed`, or `failed`. Simulated bookings record `not_required`. Each refund records whether the seller share comes out of the still-held payout (`payable`) or is owed back after it was paid (`receivable`, a seller recovery). Processing writes the ledger, and sets the booking's `payment_state` to `refunded` or `partially_refunded`.
 - Problems: the buyer can report a problem from booking until the dispute window closes (`DISPUTE_WINDOW_MINUTES`, default 2 hours after the end); the seller can report one any time. A buyer's open problem holds the payout until operations resolve it, optionally with a refund.
 - No-shows: from 10 minutes after the start until the dispute window closes, a participant can report the other absent.
@@ -43,9 +43,19 @@ This file summarizes code currently present in the Go API and PostgreSQL migrati
   - The seller can reply once. Operations can hide or restore a review, with a reason and an audit record.
   - A review request email goes out an hour after the session, unless the buyer has already reviewed.
 
+## Payments that cannot become a booking
+
+- A verified charge whose hold lapsed is first offered its time again (`reclaimLateSlot`: reactivate the hold if the time is in the future, inside the seller's hours and free); if that works, it books normally.
+- Otherwise, and for a second charge on a converted quote, a seller who stopped taking bookings, or a closed offer: `payment_exceptions` row (`open` → `awaiting_provider` → `resolved`) plus a refund with `booking_id NULL`, `payment_exception_id` set and `reason='unbooked_payment'` (`queued` or `pending_approval` → `submitted` → `processed`). Emails: `payment_returning_buyer` at once, `payment_returned_buyer` when sent.
+- A processor fee above the platform's share does not block the booking; it is flagged (`settlement_mismatch`, `open`) for review.
+
+## Meeting links
+
+- `meeting_source`: `seller` (added by hand), `google_meet` (Google Calendar), or `auto` (created by WantMyTime at the deadline when neither exists). A seller's own link always replaces the others and re-emails the buyer.
+
 ## Settlement and operations
 
-- Each provider allocation has one immutable settlement route. New bookings use `approved_transfer`: the seller payout follows `scheduled → processing → paid`, or `cancelled` (nothing left after refunds) or `failed` (refused or returned; an operator retry moves it back to `processing` under a new reference). Holds are computed from the booking, not stored.
+- Each provider allocation has one immutable settlement route. New bookings use `approved_transfer`: the seller payout follows `scheduled → processing → paid`, or `cancelled` (nothing left after refunds) or `failed` (refused or returned). A failed payout moves back to `processing` under a new reference automatically (once after two hours, and whenever the seller saves a different payout account), or when an operator retries it. Holds are computed from the booking, not stored.
 - Settlement confirmation is separate from allocation and requires provider-supported evidence. A normalized CSV import matches reference, currency and exact seller entitlement; unmatched and mismatched rows remain reviewable. The accepted file format still requires confirmation against an approved provider account export.
 - Operations uses MFA freshness, per-route permission checks, and same-transaction audit records for sensitive actions. There is no generic balance edit, arbitrary payout, or mark-paid action; operators can only retry a failed payout to the seller's own verified account.
 

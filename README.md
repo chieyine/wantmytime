@@ -1,8 +1,10 @@
 # WantMyTime (wantmytime.com)
 
-> **Friends get your time free. Everyone else books it.**
+> **Sell your time with one link. Buyers pay upfront; you get paid after the call.**
 
-WantMyTime is a dedicated booking and payment platform for professionals and creators. Share one personal link where people pick an available slot, confirm with upfront payment, and meet privately—with automatic hold, calendar sync, dispute protection, and scheduled payouts.
+WantMyTime is a dedicated booking and payment platform for professionals and creators. Share one personal link where people pick an available slot, pay upfront, and meet privately. WantMyTime holds the payment, gives both sides a 2-hour problem window after the call, then pays the seller out about 3 hours after it ends.
+
+Payments and payouts run on Kora. Nigeria (NGN: bank transfer, pay with bank) is live first; Ghana (GHS) and Kenya (KES), both by mobile money, are built in and switch on per country with `SELLER_COUNTRIES` once Kora enables them. A seller's country fixes the currency they charge in. WantMyTime does not take card payments. See [docs/FLOW_WALKTHROUGH.md](docs/FLOW_WALKTHROUGH.md) and [docs/LAUNCH_CHECKLIST.md](docs/LAUNCH_CHECKLIST.md).
 
 ---
 
@@ -30,7 +32,7 @@ WantMyTime is composed of two primary services:
                                   ▼                  ▼
                          ┌─────────────────┐ ┌───────────────┐
                          │   PostgreSQL    │ │ Kora Payments │
-                         │  (Persistence)  │ │ (Bank/Card)   │
+                         │  (Persistence)  │ │ (Bank/MoMo)   │
                          └─────────────────┘ └───────────────┘
 ```
 
@@ -96,7 +98,7 @@ npm run build
 
 - **Guaranteed Payout Delays**: Payouts to sellers are held until ~3 hours after the call ends and the buyer problem window has passed.
 - **Fail-Closed Financial Gates**: Live payment collection requires explicit provider approval flags and approval ID verification.
-- **Zero-Storage of Raw Card Numbers**: All payment card flows defer to PCI-DSS compliant providers (Kora). Bank account numbers are AES-GCM encrypted at rest.
+- **No card payments**: buyers pay by bank transfer, pay with bank or mobile money through Kora. Sellers' bank account numbers are AES-GCM encrypted at rest.
 - **TOTP Replay Protection**: Operator administrative actions enforce strict time-step replay tracking and audited logs.
 - **Idempotent Webhooks & Allocations**: Webhooks from payment gateways are strictly de-duplicated with advisory locks to prevent double-crediting.
 

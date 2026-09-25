@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
-	import { formatNaira } from '$lib/money';
+	import { formatMoney } from '$lib/money';
 	import CursorPager from '$lib/components/CursorPager.svelte';
 
-	type Offer = { id: string; seller: string; buyer_name: string; duration_minutes: number; state: string; version: number; expires_at: string; amount_minor: string; role: 'seller' | 'buyer' };
+	type Offer = { id: string; seller: string; buyer_name: string; duration_minutes: number; state: string; version: number; expires_at: string; amount_minor: string; role: 'seller' | 'buyer'; currency?: string };
 	let offers = $state<Offer[]>([]);
 	let loading = $state(true);
 	let message = $state('');
@@ -55,7 +55,7 @@
 	{:else if message && !offers.length}<div class="notice notice-warning" role="alert">{message}</div>
 	{:else if offers.length === 0}<div class="empty-state"><span class="empty-line"></span><h2>NO OFFERS YET.</h2><p>Offers people send you will show up here.</p></div>
 	{:else}
-		{#if filtered.length}<div class="record-list" aria-live="polite">{#each filtered as offer (offer.id)}<a class="record-row" href={`/app/offers/${encodeURIComponent(offer.id)}`}><div class="record-row-date"><strong>{offer.duration_minutes}</strong><span>MIN</span></div><div class="record-row-main"><span class="record-status" class:urgent={canRespond(offer)}>{status(offer)}</span><h2>{offer.role === 'seller' ? offer.buyer_name : offer.seller}</h2><p>{offer.role === 'seller' ? 'Received' : 'Sent'} · {offer.state === 'agreed' ? 'agreement saved' : `response deadline ${dateLabel(offer.expires_at)}`}</p></div><div class="record-row-end"><strong>{formatNaira(Number(offer.amount_minor))}</strong><span>{nextAction(offer)} ↗</span></div></a>{/each}</div>
+		{#if filtered.length}<div class="record-list" aria-live="polite">{#each filtered as offer (offer.id)}<a class="record-row" href={`/app/offers/${encodeURIComponent(offer.id)}`}><div class="record-row-date"><strong>{offer.duration_minutes}</strong><span>MIN</span></div><div class="record-row-main"><span class="record-status" class:urgent={canRespond(offer)}>{status(offer)}</span><h2>{offer.role === 'seller' ? offer.buyer_name : offer.seller}</h2><p>{offer.role === 'seller' ? 'Received' : 'Sent'} · {offer.state === 'agreed' ? 'agreement saved' : `response deadline ${dateLabel(offer.expires_at)}`}</p></div><div class="record-row-end"><strong>{formatMoney(Number(offer.amount_minor), offer.currency)}</strong><span>{nextAction(offer)} ↗</span></div></a>{/each}</div>
 		{:else}<div class="record-filter-empty"><h2>{filter === 'respond' ? 'YOU ARE ALL CAUGHT UP.' : 'NO OFFERS IN THIS VIEW.'}</h2><p>Nothing here. Older offers may be further down: try All or load more.</p></div>{/if}
 		{#if message}<p class="notice notice-warning" role="alert">{message}</p>{/if}
 		<CursorPager cursor={nextCursor} busy={loading} onNext={() => load(nextCursor)} />

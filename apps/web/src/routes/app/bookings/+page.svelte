@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
-	import { formatNaira } from '$lib/money';
+	import { formatMoney } from '$lib/money';
 	import CursorPager from '$lib/components/CursorPager.svelte';
 
 	let { data } = $props();
 	let ownHandle = $derived((data.account as { handle: string }).handle);
-	type Booking = { id: string; seller: string; buyer: string; duration_minutes: number; starts_at: string; amount_minor: number; state: string; payment_state: string };
+	type Booking = { id: string; seller: string; buyer: string; duration_minutes: number; starts_at: string; amount_minor: number; state: string; payment_state: string; currency?: string };
 	let bookings = $state<Booking[]>([]);
 	let loading = $state(true);
 	let message = $state('');
@@ -49,7 +49,7 @@
 	{:else if message && !bookings.length}<div class="notice notice-warning" role="alert">{message}</div>
 	{:else if bookings.length === 0}<div class="empty-state"><span class="empty-line"></span><h2>YOUR FIRST BOOKING WILL APPEAR HERE.</h2><p>When someone books your link, you will see the time and private details here.</p><a href="/app/share" class="text-link">SHARE YOUR LINK ↗</a></div>
 	{:else}
-		{#if filtered.length}<div class="record-list" aria-live="polite">{#each filtered as booking (booking.id)}<a class="record-row" href={`/app/bookings/${encodeURIComponent(booking.id)}`}><div class="record-row-date"><strong>{new Intl.DateTimeFormat(undefined, { day: '2-digit' }).format(new Date(booking.starts_at))}</strong><span>{new Intl.DateTimeFormat(undefined, { month: 'short' }).format(new Date(booking.starts_at)).toUpperCase()}</span></div><div class="record-row-main"><span class="record-status" class:urgent={needsAttention(booking)}>{status(booking)}</span><h2>{booking.seller === ownHandle ? booking.buyer : booking.seller}</h2><p>{dateLabel(booking.starts_at)} · {booking.duration_minutes} min</p></div><div class="record-row-end"><strong>{formatNaira(booking.amount_minor)}</strong><span>{needsAttention(booking) ? 'OPEN BOOKING' : 'VIEW DETAILS'} ↗</span></div></a>{/each}</div>
+		{#if filtered.length}<div class="record-list" aria-live="polite">{#each filtered as booking (booking.id)}<a class="record-row" href={`/app/bookings/${encodeURIComponent(booking.id)}`}><div class="record-row-date"><strong>{new Intl.DateTimeFormat(undefined, { day: '2-digit' }).format(new Date(booking.starts_at))}</strong><span>{new Intl.DateTimeFormat(undefined, { month: 'short' }).format(new Date(booking.starts_at)).toUpperCase()}</span></div><div class="record-row-main"><span class="record-status" class:urgent={needsAttention(booking)}>{status(booking)}</span><h2>{booking.seller === ownHandle ? booking.buyer : booking.seller}</h2><p>{dateLabel(booking.starts_at)} · {booking.duration_minutes} min</p></div><div class="record-row-end"><strong>{formatMoney(booking.amount_minor, booking.currency)}</strong><span>{needsAttention(booking) ? 'OPEN BOOKING' : 'VIEW DETAILS'} ↗</span></div></a>{/each}</div>
 		{:else}<div class="record-filter-empty"><h2>{filter === 'attention' ? 'NO UPCOMING BOOKINGS ON THIS PAGE.' : 'NO BOOKINGS IN THIS VIEW.'}</h2><p>Nothing here. Older bookings may be further down: try All or load more.</p></div>{/if}
 		{#if message}<p class="notice notice-warning" role="alert">{message}</p>{/if}
 		<CursorPager cursor={nextCursor} busy={loading} onNext={() => load(nextCursor)} />

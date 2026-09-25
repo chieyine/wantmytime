@@ -161,27 +161,38 @@ func (a *API) alertRules(ctx context.Context, q *store.Queries) ([]alertRule, er
 		{"provider_events_stuck", "critical", s.ProviderOldestPendingSeconds > 15*60, s.ProviderOldestPendingSeconds,
 			fmt.Sprintf("The oldest payment provider event has waited %s for verification. The payment worker may be down.", humanSeconds(s.ProviderOldestPendingSeconds))},
 		{"payment_exceptions_open", "critical", s.PaymentExceptionsOpen > 0, float64(s.PaymentExceptionsOpen),
-			fmt.Sprintf("%d payment exception(s) need review (for example a charge that arrived after its time was released). Review Operations > Payment exceptions.", s.PaymentExceptionsOpen)},
+			fmt.Sprintf("%d payment exception(s) need review (refunds of unbooked payments start by themselves and are not counted). Review Operations > Payment exceptions.", s.PaymentExceptionsOpen)},
 		{"provider_cases_due_soon", "critical", s.ProviderCasesDueSoon > 0, float64(s.ProviderCasesDueSoon),
 			fmt.Sprintf("%d dispute or refund case(s) have a provider deadline within 72 hours. Review Operations > Disputes and refunds.", s.ProviderCasesDueSoon)},
-		{"meetings_missing_link_soon", "warning", s.MeetingsMissingLinkSoon > 0, float64(s.MeetingsMissingLinkSoon),
-			fmt.Sprintf("%d booking(s) start within 2 hours without a meeting link. Review Operations > Meeting delivery.", s.MeetingsMissingLinkSoon)},
+	}
+	if autoMeetingLinksEnabled() {
+		// Links are created automatically at the deadline; alert only when
+		// that did not happen (for example the link encryption key is missing).
+		var missed int64
+		if err = a.db.QueryRow(ctx, `SELECT count(*) FROM bookings WHERE state='confirmed' AND meeting_url IS NULL AND meeting_deadline<now()-interval '5 minutes' AND starts_at>now()`).Scan(&missed); err != nil {
+			return nil, err
+		}
+		rules = append(rules, alertRule{"meetings_missing_link_soon", "critical", missed > 0, float64(missed),
+			fmt.Sprintf("%d booking(s) passed their link deadline without a meeting link, and none could be created automatically. Check MEETING_LINK_ENCRYPTION_KEY, then Operations > Meeting delivery.", missed)})
+	} else {
+		rules = append(rules, alertRule{"meetings_missing_link_soon", "warning", s.MeetingsMissingLinkSoon > 0, float64(s.MeetingsMissingLinkSoon),
+			fmt.Sprintf("%d booking(s) start within 2 hours without a meeting link. Review Operations > Meeting delivery.", s.MeetingsMissingLinkSoon)})
 	}
 	if a.emailConfigured() {
 		rules = append(rules,
 			alertRule{"notifications_failed", "warning", s.NotificationsFailed24h > 0, float64(s.NotificationsFailed24h),
-				fmt.Sprintf("%d email(s) failed after every retry in the last 24 hours. Check the email provider. Review Operations > System health.", s.NotificationsFailed24h)},
+				fmt.Sprintf("%d email(s) still failed after every automatic retry in the last week. Check the email provider. Review Operations > System health.", s.NotificationsFailed24h)},
 			alertRule{"notifications_backlog", "warning", s.NotificationsOldestDueSeconds > 30*60, s.NotificationsOldestDueSeconds,
 				fmt.Sprintf("The oldest due email has waited %s. The email worker or provider may be down.", humanSeconds(s.NotificationsOldestDueSeconds))},
 		)
 	}
 	var refundsFailed, refundsWaiting, noShowDisputes int64
-	if err = a.db.QueryRow(ctx, `SELECT (SELECT count(*) FROM refunds WHERE state='failed'),(SELECT count(*) FROM refunds WHERE state='pending_approval' AND created_at<now()-interval '1 hour'),(SELECT count(*) FROM no_show_reports WHERE state='disputed')`).Scan(&refundsFailed, &refundsWaiting, &noShowDisputes); err != nil {
+	if err = a.db.QueryRow(ctx, `SELECT (SELECT count(*) FROM refunds WHERE state='failed' AND (provider_refund_id IS NOT NULL OR payment_attempt_id IS NULL OR auto_retries>=3)),(SELECT count(*) FROM refunds WHERE state='pending_approval' AND created_at<now()-interval '1 hour'),(SELECT count(*) FROM no_show_reports WHERE state='disputed')`).Scan(&refundsFailed, &refundsWaiting, &noShowDisputes); err != nil {
 		return nil, err
 	}
 	rules = append(rules,
 		alertRule{"refunds_failed", "critical", refundsFailed > 0, float64(refundsFailed),
-			fmt.Sprintf("%d refund(s) failed. The buyer has not been paid back. Review Operations > Refunds.", refundsFailed)},
+			fmt.Sprintf("%d refund(s) still failed after automatic retries. The buyer has not been paid back. Review Operations > Refunds.", refundsFailed)},
 		alertRule{"refunds_awaiting_approval", "warning", refundsWaiting > 0, float64(refundsWaiting),
 			fmt.Sprintf("%d refund(s) have waited over an hour for approval. Review Operations > Refunds.", refundsWaiting)},
 		alertRule{"no_show_disputes", "warning", noShowDisputes > 0, float64(noShowDisputes),
@@ -190,18 +201,18 @@ func (a *API) alertRules(ctx context.Context, q *store.Queries) ([]alertRule, er
 	// Payouts: failures need a person; anything still unpaid a day after it
 	// was due (and not held by a dispute) means sellers are waiting.
 	var payoutsFailed, payoutsLate, problemsOpen int64
-	if err = a.db.QueryRow(ctx, `SELECT (SELECT count(*) FROM seller_payouts WHERE state='failed'),
+	if err = a.db.QueryRow(ctx, `SELECT (SELECT count(*) FROM seller_payouts WHERE state='failed' AND generation>=5),
 		(SELECT count(*) FROM seller_payouts po JOIN bookings b ON b.id=po.booking_id WHERE po.state IN ('scheduled','processing') AND `+payoutReleaseAtSQL+` < now()-interval '24 hours' AND (po.state='processing' OR (`+payoutHoldSQL+`)='')),
-		(SELECT count(*) FROM bookings WHERE issue_reason IS NOT NULL AND issue_resolved_at IS NULL AND issue_reported_by='buyer')`, int(payoutDelay()/time.Minute)).Scan(&payoutsFailed, &payoutsLate, &problemsOpen); err != nil {
+		(SELECT count(*) FROM bookings WHERE issue_reason IS NOT NULL AND issue_resolved_at IS NULL AND issue_reported_by='buyer' AND issue_disputed_at IS NOT NULL)`, int(payoutDelay()/time.Minute)).Scan(&payoutsFailed, &payoutsLate, &problemsOpen); err != nil {
 		return nil, err
 	}
 	rules = append(rules,
 		alertRule{"payouts_failed", "critical", payoutsFailed > 0, float64(payoutsFailed),
-			fmt.Sprintf("%d seller payout(s) failed. Review Operations > Payouts.", payoutsFailed)},
+			fmt.Sprintf("%d seller payout(s) still failed after every automatic retry (2, 12, 24 and 48 hours). The seller has been emailed; a new payout account sends it at once. Review Operations > Payouts.", payoutsFailed)},
 		alertRule{"payouts_late", "warning", payoutsLate > 0, float64(payoutsLate),
 			fmt.Sprintf("%d seller payout(s) are more than a day late (no bank account, funds not settled, or provider trouble). Review Operations > Payouts.", payoutsLate)},
 		alertRule{"problems_open", "warning", problemsOpen > 0, float64(problemsOpen),
-			fmt.Sprintf("%d buyer-reported problem(s) are holding seller payouts. Review Operations > Bookings.", problemsOpen)},
+			fmt.Sprintf("%d problem report(s) are disputed by the seller and need your decision. Review Operations > Bookings.", problemsOpen)},
 	)
 	beats, err := q.WorkerHeartbeats(ctx)
 	if err != nil {

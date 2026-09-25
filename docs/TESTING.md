@@ -20,7 +20,7 @@ Covered journeys:
 
 - Seller claim (including the second-link and unknown-field rules) and repeated availability saves.
 - A booking paid by bank transfer end to end: a one-off account shown in WantMyTime (reused on refresh), the hold lasting past the account's expiry, a short transfer refused as underpaid, then the signed `charge.success` webhook, worker verification, booking, allocation, immediately-available payout funds, balanced ledger journal and confirmation emails. A forged webhook is refused.
-- Card as a fallback: the hosted card page, card funds held until settlement, and a second payment for the same quote flagged as a duplicate charge instead of a second booking.
+- Pay with bank as a second method: the hosted page, its funds held until settlement, and a second payment for the same quote flagged as a duplicate charge instead of a second booking.
 - Kora amounts in naira strings and numbers convert to kobo exactly; bank transfer is always offered first; the webhook signature covers the `data` object.
 - A payment against a withdrawn offer becoming an `offer_conflict` exception instead of an error.
 - Reschedule acceptance, cancellation review, session revocation, payout readiness, settlement import (all audited), TOTP replay and self-restriction refusal.
@@ -35,10 +35,6 @@ Covered journeys:
   - Reschedule, cancellation and offer events email the other person.
   - A stale email (for example an offer already withdrawn) is cancelled rather than sent.
   - Rendering escapes HTML and neutralises header injection.
-- International cards (`international_cards_integration_test.go`):
-  - A foreign card whose fee is within the approved schedule becomes a booking, with the seller's share intact and a balanced ledger.
-  - The same payment with the setting off, a fee above the schedule, or a Nigerian card over the platform fee stops as an exception.
-  - The buyer pays the bank transfer fee: the charge is price plus fee, the seller still gets 95% of the price, the platform books its fee plus the transfer fee, and a seller cancellation refunds the fee too.
 
 - Google Calendar (`calendar_integration_test.go`, against a fake Google):
   - Connecting uses PKCE and offline access, and stores the refresh token encrypted.

@@ -17,7 +17,7 @@
 		busy = true; actionMessage = '';
 		try {
 			await api(`/api/v1/ops/people/${encodeURIComponent(params.id)}/payout-readiness`, { method: 'POST', body: JSON.stringify({ ready, reason }) });
-			actionMessage = ready ? 'Seller marked ready. The change is audited.' : 'Seller taken out of paid bookings. The change is audited.';
+			actionMessage = ready ? 'Hold lifted: the seller is open for bookings again. The change is audited.' : 'Seller put on hold: no new bookings. The change is audited.';
 			reason = '';
 			await load();
 		} catch (e) {
@@ -29,6 +29,6 @@
 <section class="form-page app-page"><a class="back-link" href="/ops/people">← People</a><p class="eyebrow">Account record</p>
 {#if person}<h1 class="page-heading">{person.name}</h1><div class="list-stack"><article class="list-card"><div><strong>Account</strong><p>{person.email || 'No verified email'} · {person.status}</p><small>Created {new Date(person.created_at).toLocaleString()}</small></div></article>
 {#if person.seller}<article class="list-card"><div><strong>Personal link</strong><p>@{person.seller.handle} · {person.seller.publication_state}</p><small>Readiness: {person.seller.readiness_state} · {person.seller.paused ? 'Paused' : 'Taking bookings'} · Bank account {person.seller.payout_account_added ? 'added' : 'not added yet'}</small></div></article>
-<section class="readiness-panel"><h2>Bookings on or off</h2><p>Sellers open for bookings on their own once the bank confirms their payout account. Put a seller on hold to stop new bookings (existing ones stay); only an operator can lift a hold. Requires the <code>ops:seller:approve</code> permission.</p><div class="setup-form"><label>Reason (kept in the audit log)<textarea class="field" rows="3" maxlength="300" bind:value={reason}></textarea></label><div class="ops-nav"><button class="button" onclick={() => setReadiness(true)} disabled={busy || reason.trim().length < 8}>Lift hold: open for bookings</button><button class="button button-secondary" onclick={() => setReadiness(false)} disabled={busy || reason.trim().length < 8}>Put on hold</button></div>{#if actionMessage}<p class="notice notice-info" aria-live="polite">{actionMessage}</p>{/if}</div></section>
+<section class="readiness-panel"><h2>Bookings on or off</h2><p>Sellers open for bookings on their own once they save a payout account. Put a seller on hold to stop new bookings (existing ones stay); only an operator can lift a hold. Requires the <code>ops:seller:approve</code> permission.</p><div class="setup-form"><label>Reason (kept in the audit log)<textarea class="field" rows="3" maxlength="300" bind:value={reason}></textarea></label><div class="ops-nav"><button class="button" onclick={() => setReadiness(true)} disabled={busy || reason.trim().length < 8}>Lift hold: open for bookings</button><button class="button button-secondary" onclick={() => setReadiness(false)} disabled={busy || reason.trim().length < 8}>Put on hold</button></div>{#if actionMessage}<p class="notice notice-info" aria-live="polite">{actionMessage}</p>{/if}</div></section>
 {:else}<p class="page-intro">This account has not claimed a seller link.</p>{/if}</div>
 {:else if message}<div class="notice notice-warning" role="status">{message}</div>{:else}<p class="page-intro">Loading account…</p>{/if}</section>

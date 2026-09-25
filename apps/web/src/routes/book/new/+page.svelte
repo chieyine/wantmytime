@@ -2,12 +2,12 @@
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
 	import { recordProductEvent } from '$lib/analytics';
-	import { formatNaira, priceForDuration } from '$lib/money';
+	import { formatMoney, priceForDuration, methodLabels } from '$lib/money';
 	import { page } from '$app/state';
 	import { viewerTimeZone, todayIn, sameClock, clockIn, zoneCity, timeOnly } from '$lib/time';
 	let seller = $derived((page.url.searchParams.get('seller') ?? '').trim().toLowerCase());
 	let duration = $derived.by(() => { const d = Number(page.url.searchParams.get('duration') ?? 30); return d === 15 || d === 30 || d === 60 ? d : 30; });
-	type Person = { handle:string; name:string; mode:string; base_30_minor:number; durations:number[]; timezone:string; paused:boolean; ready:boolean; local_simulator:boolean; provider_checkout_enabled:boolean };
+	type Person = { handle:string; name:string; mode:string; base_30_minor:number; durations:number[]; timezone:string; paused:boolean; ready:boolean; local_simulator:boolean; provider_checkout_enabled:boolean; currency?:string; payment_methods?:string[] };
 	type Slot = { starts_at:string; local_label:string; seller_label?:string };
 	let person = $state<Person|null>(null);
 	let loadMessage = $state('');
@@ -27,10 +27,16 @@
 	let differentZone = $derived(person ? !sameClock(viewerZone, person.timezone) : false);
 	let amount = $derived(person ? priceForDuration(person.base_30_minor, duration) : 0);
 	let chosenSlot = $derived(slots.find((slot) => slot.starts_at === selected));
+	let payWith = $derived((person?.payment_methods ?? []).map((m) => (methodLabels[m] ?? m).toLowerCase()).join(' or '));
 
 	onMount(async () => {
 		try {
 			person = await api<Person>(`/api/v1/people/${encodeURIComponent(seller)}`);
+			if (person.mode === 'offer') {
+				// This link takes offers, not fixed-price bookings.
+				window.location.replace(`/offer/new?seller=${encodeURIComponent(seller)}&duration=${duration}`);
+				return;
+			}
 			viewerZone = viewerTimeZone();
 			day = todayIn(zone);
 			if (person.local_simulator || person.provider_checkout_enabled) {
@@ -108,9 +114,9 @@
 					</section>
 					{#if message && slots.length > 0}<p class="booking-error" role="alert">{message}</p>{/if}
 					<button class="booking-submit" type="button" onclick={startVerification} disabled={!selected || !buyerName.trim() || !email.trim() || busy}>{busy ? 'Holding your time…' : 'Continue to payment'} <span aria-hidden="true">↗</span></button>
-					<p class="booking-help">Next: pay by bank transfer. We hold your time while you do. {person.local_simulator ? 'This is a test setup, so no money moves.' : ''}</p>
+					<p class="booking-help">Next: pay{payWith ? ` by ${payWith}` : ''}. We hold your time while you do. {person.local_simulator ? 'This is a test setup, so no money moves.' : ''}</p>
 				</div>
-				<aside class="booking-summary"><div class="booking-summary-top"><span>Your booking</span><span>WantMyTime</span></div><h2>{person.name}</h2><div class="booking-summary-row"><span>Length</span><strong>{duration} minutes</strong></div><div class="booking-summary-row"><span>Time</span><strong>{chosenSlot ? chosenSlot.local_label : 'Pick a time'}{#if chosenSlot && differentZone}<small class="booking-other-zone">{showSellerZone ? `${clockIn(chosenSlot.starts_at, viewerZone)} your time` : `${clockIn(chosenSlot.starts_at, person.timezone)} for ${person.name}`}</small>{/if}</strong></div><div class="booking-summary-row"><span>Date</span><strong>{day ? new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(`${day}T12:00:00`)) : 'Pick a date'}</strong></div><div class="booking-summary-total"><span>Total · {duration} min</span><strong>{formatNaira(amount)}</strong></div><p>Pay by bank transfer. Confirmed the moment it lands.</p></aside>
+				<aside class="booking-summary"><div class="booking-summary-top"><span>Your booking</span><span>WantMyTime</span></div><h2>{person.name}</h2><div class="booking-summary-row"><span>Length</span><strong>{duration} minutes</strong></div><div class="booking-summary-row"><span>Time</span><strong>{chosenSlot ? chosenSlot.local_label : 'Pick a time'}{#if chosenSlot && differentZone}<small class="booking-other-zone">{showSellerZone ? `${clockIn(chosenSlot.starts_at, viewerZone)} your time` : `${clockIn(chosenSlot.starts_at, person.timezone)} for ${person.name}`}</small>{/if}</strong></div><div class="booking-summary-row"><span>Date</span><strong>{day ? new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(`${day}T12:00:00`)) : 'Pick a date'}</strong></div><div class="booking-summary-total"><span>Total · {duration} min</span><strong>{formatMoney(amount, person.currency)}</strong></div><p>{payWith ? `Pay by ${payWith}.` : 'Pay after you pick a time.'} Confirmed the moment it lands.</p></aside>
 			</div>
 		{/if}
 	{/if}

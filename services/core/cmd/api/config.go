@@ -69,6 +69,9 @@ func productionConfigProblems(getenv func(string) string) (problems, warnings []
 	} else if _, err := newRedisClient(r); err != nil {
 		problems = append(problems, err.Error())
 	}
+	if getenv("VAPID_PUBLIC_KEY") == "" || getenv("VAPID_PRIVATE_KEY") == "" {
+		warnings = append(warnings, "VAPID keys are not set: phone and browser notifications are off (run `aside-api vapid-keys`)")
+	}
 	if getenv("MEDIA_S3_ENDPOINT") == "" {
 		warnings = append(warnings, "MEDIA_S3_ENDPOINT is not set: profile photos are stored in PostgreSQL")
 	}
@@ -78,6 +81,19 @@ func productionConfigProblems(getenv func(string) string) (problems, warnings []
 		private := host == "localhost" || host == "127.0.0.1" || host == "db" || !strings.Contains(host, ".")
 		if !private && mode != "require" && mode != "verify-ca" && mode != "verify-full" {
 			warnings = append(warnings, "DATABASE_URL does not require TLS (add sslmode=verify-full for a managed database)")
+		}
+	}
+	for _, item := range strings.Split(getenv("SELLER_COUNTRIES"), ",") {
+		code := strings.ToUpper(strings.TrimSpace(item))
+		if code == "" {
+			continue
+		}
+		known := false
+		for _, m := range allMarkets {
+			known = known || m.Country == code
+		}
+		if !known {
+			problems = append(problems, "SELLER_COUNTRIES lists "+code+", which WantMyTime does not support")
 		}
 	}
 	if getenv("SENTRY_DSN") == "" {

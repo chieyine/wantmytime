@@ -144,6 +144,13 @@ func (a *API) advanceRefund(ctx context.Context, client *koraClient, r store.Cla
 // share to recover, the booking's payment state and the buyer's email. It is
 // idempotent.
 func (a *API) finalizeRefund(ctx context.Context, refundID string, operator *string, note *string) error {
+	var unbooked bool
+	if err := a.db.QueryRow(ctx, `SELECT payment_exception_id IS NOT NULL FROM refunds WHERE id=$1`, refundID).Scan(&unbooked); err != nil {
+		return err
+	}
+	if unbooked {
+		return a.finalizeExceptionRefund(ctx, refundID, operator, note)
+	}
 	tx, err := a.db.Begin(ctx)
 	if err != nil {
 		return err
@@ -229,7 +236,9 @@ func (a *API) myRecoveries(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "DATABASE_ERROR", "Refund recoveries could not be loaded.")
 		return
 	}
-	jsonOut(w, 200, map[string]any{"total_minor": s.TotalMinor, "recovered_minor": s.RecoveredMinor, "outstanding_minor": s.TotalMinor - s.RecoveredMinor, "max_share_bps": recoveryMaxBps()})
+	currency := "NGN"
+	_ = a.db.QueryRow(r.Context(), `SELECT currency::text FROM seller_profiles WHERE user_id=$1`, u.ID).Scan(&currency)
+	jsonOut(w, 200, map[string]any{"total_minor": s.TotalMinor, "recovered_minor": s.RecoveredMinor, "outstanding_minor": s.TotalMinor - s.RecoveredMinor, "max_share_bps": recoveryMaxBps(), "currency": currency})
 }
 
 // --- operations ----------------------------------------------------------------
@@ -238,7 +247,7 @@ func (a *API) opsRefunds(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.requireOps(w, r, "ops:read"); !ok {
 		return
 	}
-	rows, err := a.db.Query(r.Context(), `SELECT rf.id::text,rf.booking_id::text,sp.handle,rf.amount_minor,rf.currency,rf.platform_share_minor,rf.seller_share_minor,rf.reason,rf.state,COALESCE(rf.provider_refund_id,''),COALESCE(rf.last_error,''),COALESCE(rf.note,''),rf.attempts,rf.created_at,rf.processed_at FROM refunds rf JOIN bookings b ON b.id=rf.booking_id JOIN seller_profiles sp ON sp.id=b.seller_id ORDER BY (rf.state IN ('pending_approval','failed')) DESC, rf.created_at DESC LIMIT 200`)
+	rows, err := a.db.Query(r.Context(), `SELECT rf.id::text,COALESCE(rf.booking_id::text,''),COALESCE(sp.handle,qsp.handle,''),rf.amount_minor,rf.currency,rf.platform_share_minor,rf.seller_share_minor,rf.reason,rf.state,COALESCE(rf.provider_refund_id,''),COALESCE(rf.last_error,''),COALESCE(rf.note,''),rf.attempts,rf.created_at,rf.processed_at FROM refunds rf LEFT JOIN bookings b ON b.id=rf.booking_id LEFT JOIN seller_profiles sp ON sp.id=b.seller_id LEFT JOIN payment_attempts pa ON pa.id=rf.payment_attempt_id AND rf.booking_id IS NULL LEFT JOIN quotes q ON q.id=pa.quote_id LEFT JOIN seller_profiles qsp ON qsp.id=q.seller_id ORDER BY (rf.state IN ('pending_approval','failed')) DESC, rf.created_at DESC LIMIT 200`)
 	if err != nil {
 		problem(w, 503, "REFUNDS_UNAVAILABLE", "Refunds could not be loaded.")
 		return

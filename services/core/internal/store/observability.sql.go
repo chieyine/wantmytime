@@ -12,11 +12,11 @@ import (
 
 const alertSignals = `-- name: AlertSignals :one
 SELECT
-  (SELECT count(*) FROM provider_events WHERE state = 'failed')::bigint AS provider_events_failed,
+  (SELECT count(*) FROM provider_events WHERE state = 'failed' AND auto_retries >= 3)::bigint AS provider_events_failed,
   COALESCE((SELECT extract(epoch FROM now() - min(received_at)) FROM provider_events WHERE state IN ('queued', 'retry')), 0)::double precision AS provider_oldest_pending_seconds,
-  (SELECT count(*) FROM notification_outbox WHERE state = 'failed' AND created_at > now() - interval '24 hours')::bigint AS notifications_failed_24h,
+  (SELECT count(*) FROM notification_outbox WHERE state = 'failed' AND auto_retries >= 3 AND created_at > now() - interval '7 days')::bigint AS notifications_failed_24h,
   COALESCE((SELECT extract(epoch FROM now() - min(due_at)) FROM notification_outbox WHERE state = 'queued' AND due_at <= now()), 0)::double precision AS notifications_oldest_due_seconds,
-  (SELECT count(*) FROM payment_exceptions WHERE state <> 'resolved')::bigint AS payment_exceptions_open,
+  (SELECT count(*) FROM payment_exceptions WHERE state IN ('open', 'investigating'))::bigint AS payment_exceptions_open,
   (SELECT count(*) FROM provider_cases WHERE state <> 'resolved' AND provider_deadline IS NOT NULL AND provider_deadline < now() + interval '72 hours')::bigint AS provider_cases_due_soon,
   (SELECT count(*) FROM bookings WHERE state = 'confirmed' AND meeting_url IS NULL AND starts_at > now() AND starts_at < now() + interval '2 hours')::bigint AS meetings_missing_link_soon
 `

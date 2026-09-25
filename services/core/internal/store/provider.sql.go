@@ -12,9 +12,14 @@ import (
 
 const approvedChannelFee = `-- name: ApprovedChannelFee :one
 SELECT percent_bps, fixed_minor, cap_minor FROM provider_fee_schedules
-WHERE provider = 'kora' AND currency = 'NGN' AND channel = $1 AND approved_at IS NOT NULL AND effective_from <= now()
+WHERE provider = 'kora' AND currency = $1 AND channel = $2 AND approved_at IS NOT NULL AND effective_from <= now()
 ORDER BY effective_from DESC LIMIT 1
 `
+
+type ApprovedChannelFeeParams struct {
+	Currency string
+	Channel  string
+}
 
 type ApprovedChannelFeeRow struct {
 	PercentBps int32
@@ -22,8 +27,8 @@ type ApprovedChannelFeeRow struct {
 	CapMinor   *int64
 }
 
-func (q *Queries) ApprovedChannelFee(ctx context.Context, channel string) (ApprovedChannelFeeRow, error) {
-	row := q.db.QueryRow(ctx, approvedChannelFee, channel)
+func (q *Queries) ApprovedChannelFee(ctx context.Context, arg ApprovedChannelFeeParams) (ApprovedChannelFeeRow, error) {
+	row := q.db.QueryRow(ctx, approvedChannelFee, arg.Currency, arg.Channel)
 	var i ApprovedChannelFeeRow
 	err := row.Scan(&i.PercentBps, &i.FixedMinor, &i.CapMinor)
 	return i, err
@@ -31,7 +36,8 @@ func (q *Queries) ApprovedChannelFee(ctx context.Context, channel string) (Appro
 
 const checkoutQuote = `-- name: CheckoutQuote :one
 SELECT q.id, q.seller_id::text AS seller_id, q.buyer_name, q.gross_minor, q.state, q.expires_at, sp.paused, (sp.readiness_state = 'ready')::boolean AS ready,
-       EXISTS (SELECT 1 FROM seller_payout_accounts spa WHERE spa.seller_id = sp.id)::boolean AS has_payout_account, i.normalized_identifier AS buyer_email
+       EXISTS (SELECT 1 FROM seller_payout_accounts spa WHERE spa.seller_id = sp.id)::boolean AS has_payout_account, i.normalized_identifier AS buyer_email,
+       q.currency::text AS currency, sp.country::text AS seller_country
 FROM quotes q
 JOIN seller_profiles sp ON sp.id = q.seller_id
 JOIN user_identities i ON i.user_id = q.buyer_user_id AND i.type = 'email'
@@ -55,6 +61,8 @@ type CheckoutQuoteRow struct {
 	Ready            bool
 	HasPayoutAccount bool
 	BuyerEmail       string
+	Currency         string
+	SellerCountry    string
 }
 
 func (q *Queries) CheckoutQuote(ctx context.Context, arg CheckoutQuoteParams) (CheckoutQuoteRow, error) {
@@ -71,6 +79,8 @@ func (q *Queries) CheckoutQuote(ctx context.Context, arg CheckoutQuoteParams) (C
 		&i.Ready,
 		&i.HasPayoutAccount,
 		&i.BuyerEmail,
+		&i.Currency,
+		&i.SellerCountry,
 	)
 	return i, err
 }
@@ -224,7 +234,7 @@ func (q *Queries) SaveTransferInstructions(ctx context.Context, arg SaveTransfer
 
 const upsertPaymentAttempt = `-- name: UpsertPaymentAttempt :one
 INSERT INTO payment_attempts(id, quote_id, provider, environment, merchant_reference, expected_minor, currency, canonical_state, approved_fee_minor, fee_basis_points, channel, buyer_fee_minor)
-VALUES (gen_random_uuid(), $1::uuid, 'kora', $2, $3, $4, 'NGN', 'initializing', $5::bigint, $6::int, $7::text, $8::bigint)
+VALUES (gen_random_uuid(), $1::uuid, 'kora', $2, $3, $4, $5::text, 'initializing', $6::bigint, $7::int, $8::text, $9::bigint)
 ON CONFLICT (provider, environment, merchant_reference) DO UPDATE SET updated_at = now()
 RETURNING id, canonical_state, COALESCE(authorization_url, '')::text AS authorization_url, transfer_details, instructions_expire_at,
   COALESCE(approved_fee_minor, 0)::bigint AS approved_fee_minor
@@ -235,6 +245,7 @@ type UpsertPaymentAttemptParams struct {
 	Environment      string
 	Reference        string
 	ExpectedMinor    int64
+	Currency         string
 	ApprovedFeeMinor int64
 	FeeBasisPoints   int32
 	Channel          string
@@ -256,6 +267,7 @@ func (q *Queries) UpsertPaymentAttempt(ctx context.Context, arg UpsertPaymentAtt
 		arg.Environment,
 		arg.Reference,
 		arg.ExpectedMinor,
+		arg.Currency,
 		arg.ApprovedFeeMinor,
 		arg.FeeBasisPoints,
 		arg.Channel,

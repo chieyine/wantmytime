@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
-	import { formatNaira } from '$lib/money';
+	import { formatMoney } from '$lib/money';
 
-	type Refund = { id: string; booking_id: string; seller: string; amount_minor: number; platform_share_minor: number; seller_share_minor: number; reason: string; state: string; provider_refund_id: string; last_error: string; note: string; attempts: number; created_at: string; processed_at: string | null };
+	type Refund = { currency: string; id: string; booking_id: string; seller: string; amount_minor: number; platform_share_minor: number; seller_share_minor: number; reason: string; state: string; provider_refund_id: string; last_error: string; note: string; attempts: number; created_at: string; processed_at: string | null };
 	let refunds = $state<Refund[]>([]);
 	let automatic = $state(false);
 	let message = $state('');
 	let busy = $state('');
 	let reasons = $state<Record<string, string>>({});
-	const reasonLabels: Record<string, string> = { buyer_cancelled: 'Buyer cancelled', seller_cancelled: 'Seller cancelled', seller_no_show: 'Seller no-show', operator: 'Operator refund', problem_upheld: 'Problem upheld' };
+	const reasonLabels: Record<string, string> = { buyer_cancelled: 'Buyer cancelled', seller_cancelled: 'Seller cancelled', seller_no_show: 'Seller no-show', operator: 'Operator refund', problem_upheld: 'Problem upheld', unbooked_payment: 'Payment with no booking (automatic)' };
 	const stateLabels: Record<string, string> = { pending_approval: 'Needs approval', queued: 'Queued', submitted: 'With Kora', processed: 'Refunded', failed: 'Failed', not_required: 'Nothing to refund' };
 
 	async function load() {
@@ -51,8 +51,8 @@
 		{#each refunds as r (r.id)}
 			<article class="list-card">
 				<div>
-					<strong>{formatNaira(r.amount_minor)} · {reasonLabels[r.reason] ?? r.reason}</strong>
-					<p>@{r.seller} · <a href={`/ops/bookings/${encodeURIComponent(r.booking_id)}`}>booking ↗</a> · seller share {formatNaira(r.seller_share_minor)} · requested {when(r.created_at)}{r.processed_at ? ` · refunded ${when(r.processed_at)}` : ''}</p>
+					<strong>{formatMoney(r.amount_minor, r.currency)} · {reasonLabels[r.reason] ?? r.reason}</strong>
+					<p>@{r.seller} · {#if r.booking_id}<a href={`/ops/bookings/${encodeURIComponent(r.booking_id)}`}>booking ↗</a>{:else}<a href="/ops/exceptions">payment exception ↗</a>{/if} · seller share {formatMoney(r.seller_share_minor, r.currency)} · requested {when(r.created_at)}{r.processed_at ? ` · refunded ${when(r.processed_at)}` : ''}</p>
 					{#if r.last_error}<small>{r.last_error}</small>{/if}
 					{#if r.note}<small>{r.note}</small>{/if}
 					{#if r.state === 'pending_approval' || r.state === 'failed'}

@@ -688,3 +688,10 @@ input[type=date]:focus-within,input[type=time]:focus-within{outline:3px solid va
 .back-button{border:0;background:none;padding:0;cursor:pointer;font-family:inherit}
 .workspace-money .money-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}@media(max-width:720px){.workspace-money .money-status-grid{grid-template-columns:1fr}}.money-empty .button{margin-top:18px}
 @media(max-width:720px){.booking-summary>h2,.booking-summary-row,.booking-summary-top{display:none}.booking-summary{padding:14px 0!important;border-width:1px 0!important}.booking-summary-total{margin:0!important;padding:0!important;border:0!important}.booking-summary>p{margin:4px 0 0!important}}
+
+/* Phone and browser notifications switch. */
+.push-toggle { display: grid; gap: 0.5rem; justify-items: start; margin: 1rem 0; padding: 1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.push-toggle p { margin: 0; }
+.workspace-push { margin-top: 1.5rem; }
+.settings-block { margin: 1.5rem 0; }
+.settings-block h2 { font-size: 1.1rem; margin: 0 0 0.25rem; }

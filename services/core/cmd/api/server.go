@@ -33,6 +33,7 @@ func (a *API) routes() http.Handler {
 	handle("GET /api/v1/people/{handle}", a.rateLimited(publicLimit, a.publicPerson))
 	handle("GET /api/v1/people/{handle}/avatar", a.rateLimited(publicLimit, a.publicAvatar))
 	handle("GET /api/v1/people/{handle}/slots", a.rateLimited(publicLimit, a.publicSlots))
+	handle("GET /api/v1/markets", a.rateLimited(publicLimit, a.publicMarkets))
 	handle("GET /api/v1/runtime", func(w http.ResponseWriter, _ *http.Request) {
 		jsonOut(w, 200, map[string]bool{"local_payment_simulator": a.localPaymentSimulatorEnabled(), "provider_checkout_enabled": a.providerCheckoutConfigured()})
 	})
@@ -70,6 +71,10 @@ func (a *API) routes() http.Handler {
 	handle("POST /api/v1/reschedules/{id}/decline", a.respondReschedule(false))
 	handle("PATCH /api/v1/bookings/{id}/meeting", a.updateMeetingLink)
 	handle("POST /api/v1/bookings/{id}/issue", a.reportBookingIssue)
+	handle("GET /api/v1/push/config", a.pushConfig)
+	handle("POST /api/v1/push/subscriptions", a.savePushSubscription)
+	handle("DELETE /api/v1/push/subscriptions", a.deletePushSubscription)
+	handle("POST /api/v1/bookings/{id}/issue/response", a.respondToProblem)
 	handle("POST /api/v1/bookings/{id}/cancellation", a.requestCancellation)
 	handle("POST /api/v1/bookings/{id}/completion", a.completeBooking)
 	handle("GET /api/v1/bookings/{id}/calendar", a.bookingCalendar)

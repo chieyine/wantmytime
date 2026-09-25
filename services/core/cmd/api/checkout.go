@@ -25,21 +25,28 @@ func (a *API) providerCheckoutConfigured() bool {
 
 // providerEnvironmentConfigured gates everything that talks to Kora. Existing
 // payment events must stay processable while new checkouts are paused, so
-// this is independent of CHECKOUTS_PAUSED.
+// this is independent of CHECKOUTS_PAUSED. At least one enabled market must
+// have its payment channels and limits set; each currency is checked again
+// when a buyer pays (checkoutReadyFor).
 func (a *API) providerEnvironmentConfigured() bool {
-	if os.Getenv("PAYMENTS_ENABLED") != "true" || strings.TrimSpace(os.Getenv("FEE_POLICY_APPROVED")) != "true" || os.Getenv("PAYMENT_ROUTE") != "escrow_payout" {
+	if os.Getenv("PAYMENTS_ENABLED") != "true" || strings.TrimSpace(os.Getenv("FEE_POLICY_APPROVED")) != "true" || !paymentRouteHoldPayout() {
 		return false
 	}
 	bps, err := strconv.Atoi(os.Getenv("FEE_BPS"))
 	if err != nil || bps < 0 || bps > 500 || os.Getenv("FEE_POLICY_MODE") != "all_in_seller_deduction" {
 		return false
 	}
-	min, minErr := strconv.ParseInt(os.Getenv("MIN_CHARGE_MINOR"), 10, 64)
-	max, maxErr := strconv.ParseInt(os.Getenv("MAX_CHARGE_MINOR"), 10, 64)
-	if minErr != nil || maxErr != nil || min <= 0 || max < min {
-		return false
+	anyMarket := false
+	for _, m := range enabledMarkets() {
+		if _, chErr := approvedChannelsFor(m.Currency); chErr != nil {
+			continue
+		}
+		if _, _, limitErr := chargeLimits(m.Currency); limitErr != nil {
+			continue
+		}
+		anyMarket = true
 	}
-	if _, err = approvedChannels(); err != nil {
+	if !anyMarket {
 		return false
 	}
 	secret := os.Getenv("KORA_SECRET_KEY")
@@ -49,54 +56,20 @@ func (a *API) providerEnvironmentConfigured() bool {
 	return os.Getenv("PAYMENT_ENV") == "sandbox" && strings.HasPrefix(secret, "sk_test_")
 }
 
-// approvedChannels lists the ways buyers may pay, bank transfer first when it
-// is approved: nearly every Nigerian pays by transfer, and transfers settle
-// at once.
-func approvedChannels() ([]string, error) {
-	allowed := map[string]bool{"bank_transfer": true, "card": true, "pay_with_bank": true}
-	out := []string{}
-	seen := map[string]bool{}
-	for _, item := range strings.Split(os.Getenv("APPROVED_PAYMENT_CHANNELS"), ",") {
-		ch := strings.TrimSpace(item)
-		if ch == "" {
-			continue
-		}
-		if !allowed[ch] {
-			return nil, fmt.Errorf("payment channel %q is not supported", ch)
-		}
-		if !seen[ch] {
-			seen[ch] = true
-			out = append(out, ch)
-		}
-	}
-	if len(out) == 0 {
-		return nil, errors.New("approved payment channels are required")
-	}
-	for i, ch := range out {
-		if ch == "bank_transfer" && i > 0 {
-			out = append([]string{"bank_transfer"}, append(out[:i:i], out[i+1:]...)...)
-			break
-		}
-	}
-	return out, nil
-}
-
-func approvedPlatformFee(amount int64) (int64, int, error) {
+// approvedPlatformFee is WantMyTime's share of a price, within the charge
+// limits for the currency.
+func approvedPlatformFee(amount int64, currency string) (int64, int, error) {
 	bps, err := strconv.Atoi(os.Getenv("FEE_BPS"))
 	if err != nil || bps < 0 || bps > 500 {
 		return 0, 0, errors.New("fee rate must be between zero and five percent")
 	}
 	platformFee := (amount/10000)*int64(bps) + ((amount%10000)*int64(bps))/10000
-	min, err := strconv.ParseInt(os.Getenv("MIN_CHARGE_MINOR"), 10, 64)
-	if err != nil || min <= 0 {
-		return 0, 0, errors.New("minimum payment amount is not configured")
-	}
-	max, err := strconv.ParseInt(os.Getenv("MAX_CHARGE_MINOR"), 10, 64)
-	if err != nil || max < min {
-		return 0, 0, errors.New("maximum payment amount is not configured")
+	min, max, err := chargeLimits(currency)
+	if err != nil {
+		return 0, 0, err
 	}
 	if amount < min || amount > max {
-		return 0, 0, errors.New("payment amount is outside the approved range")
+		return 0, 0, errors.New("this price is outside the range WantMyTime can take payment for")
 	}
 	return platformFee, bps, nil
 }
@@ -117,31 +90,15 @@ func expectedProcessorCost(amount int64, bps int, fixed int64, cap *int64) int64
 	return cost
 }
 
-func (a *API) ensureChannelEconomics(ctx context.Context, amount, platformFee int64, channels []string) error {
-	for _, channel := range channels {
-		fee, err := store.New(a.db).ApprovedChannelFee(ctx, channel)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("no approved fee schedule for channel %s", channel)
-		}
-		if err != nil {
-			return err
-		}
-		bps, fixed, cap := int(fee.PercentBps), fee.FixedMinor, fee.CapMinor
-		if bps < 0 || bps > 10000 || fixed < 0 || (cap != nil && *cap < 0) {
-			return fmt.Errorf("channel %s has an invalid approved fee schedule", channel)
-		}
-		if expectedProcessorCost(amount, bps, fixed, cap) > platformFee {
-			return fmt.Errorf("channel %s costs more than the approved platform fee", channel)
-		}
-	}
-	return nil
+func (a *API) channelFee(ctx context.Context, currency, channel string) (store.ApprovedChannelFeeRow, error) {
+	return store.New(a.db).ApprovedChannelFee(ctx, store.ApprovedChannelFeeParams{Currency: strings.ToUpper(strings.TrimSpace(currency)), Channel: channel})
 }
 
-// buyerTransferFee is what the buyer adds to the price so that the processor's
-// fee on the whole amount is covered: the smallest fee f with
-// cost(price+f) <= f under the approved schedule for the channel.
-func (a *API) buyerTransferFee(ctx context.Context, channel string, price int64) (int64, error) {
-	fee, err := store.New(a.db).ApprovedChannelFee(ctx, channel)
+// buyerTransferFee estimates the fee Kora will add for the buyer on a price,
+// from the approved fee schedule for the channel. It is only an estimate
+// shown before paying: Kora itself adds its current fee at checkout.
+func (a *API) buyerTransferFee(ctx context.Context, currency, channel string, price int64) (int64, error) {
+	fee, err := a.channelFee(ctx, currency, channel)
 	if err != nil {
 		return 0, err
 	}
@@ -149,32 +106,33 @@ func (a *API) buyerTransferFee(ctx context.Context, channel string, price int64)
 	if bps < 0 || bps >= 10000 || fixed < 0 || (cap != nil && *cap < 0) {
 		return 0, fmt.Errorf("channel %s has an invalid approved fee schedule", channel)
 	}
-	f := expectedProcessorCost(price, bps, fixed, cap)
-	for i := 0; i < 20; i++ {
-		next := expectedProcessorCost(price+f, bps, fixed, cap)
-		if next <= f {
-			return f, nil
-		}
-		f = next
+	return expectedProcessorCost(price, bps, fixed, cap), nil
+}
+
+// methodFees is the fee a buyer would add for each way of paying, so the
+// checkout can show the total before they choose. Methods without an
+// approved fee schedule are left out.
+func (a *API) methodFees(ctx context.Context, currency string, price int64) map[string]int64 {
+	out := map[string]int64{}
+	if price <= 0 || !a.checkoutReadyFor(currency) {
+		return out
 	}
-	return 0, fmt.Errorf("channel %s fee does not converge", channel)
+	for _, channel := range paymentMethodsFor(currency) {
+		if fee, err := a.buyerTransferFee(ctx, currency, channel, price); err == nil {
+			out[channel] = fee
+		}
+	}
+	return out
 }
 
 // transferFeeEstimate is the fee a buyer would add for the default payment
 // method, or 0 when payments aren't set up.
-func (a *API) transferFeeEstimate(ctx context.Context, price int64) int64 {
-	if price <= 0 || !a.providerCheckoutConfigured() {
+func (a *API) transferFeeEstimate(ctx context.Context, currency string, price int64) int64 {
+	methods := paymentMethodsFor(currency)
+	if len(methods) == 0 {
 		return 0
 	}
-	channels, err := approvedChannels()
-	if err != nil || len(channels) == 0 {
-		return 0
-	}
-	fee, err := a.buyerTransferFee(ctx, channels[0], price)
-	if err != nil {
-		return 0
-	}
-	return fee
+	return a.methodFees(ctx, currency, price)[methods[0]]
 }
 
 func (a *API) collection() (*koraClient, error) { return newKoraClient(a.env) }
@@ -183,9 +141,10 @@ func webhookURL() string {
 	return strings.TrimRight(envOr("PUBLIC_APP_ORIGIN", ""), "/") + "/api/v1/webhooks/kora"
 }
 
-// initializeQuoteCheckout starts paying for a held quote. By default the buyer
-// gets a one-off bank account to transfer the exact price to, shown in WantMyTime;
-// "card" opens Kora's hosted card page instead.
+// initializeQuoteCheckout starts paying for a held quote. For a Nigerian
+// seller the buyer gets a one-off bank account to transfer the exact amount
+// to, shown in WantMyTime; pay with bank and mobile money open Kora's
+// hosted payment page instead.
 func (a *API) initializeQuoteCheckout(w http.ResponseWriter, r *http.Request) {
 	u, ok, guest, scope := a.buyerActor(w, r)
 	if !ok {
@@ -204,22 +163,9 @@ func (a *API) initializeQuoteCheckout(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.ContentLength != 0 {
 		if decode(r, &in) != nil {
-			problem(w, 422, "INVALID_METHOD", "Choose bank transfer or card.")
+			problem(w, 422, "INVALID_METHOD", "Choose how you want to pay.")
 			return
 		}
-	}
-	channels, err := approvedChannels()
-	if err != nil {
-		problem(w, 503, "PAYMENT_CHANNELS_UNAVAILABLE", "Approved payment channels are not configured.")
-		return
-	}
-	method := in.Method
-	if method == "" {
-		method = channels[0]
-	}
-	if !contains(channels, method) {
-		problem(w, 422, "METHOD_NOT_AVAILABLE", "That way of paying is not available.")
-		return
 	}
 	client, err := a.collection()
 	if err != nil {
@@ -236,44 +182,56 @@ func (a *API) initializeQuoteCheckout(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "DATABASE_ERROR", "Checkout could not be prepared.")
 		return
 	}
+	currency := strings.ToUpper(strings.TrimSpace(quote.Currency))
+	channels, err := approvedChannelsFor(currency)
+	if err != nil {
+		problem(w, 503, "PAYMENT_CHANNELS_UNAVAILABLE", "Payments in this currency are not switched on yet. Your time is still held.")
+		return
+	}
+	method := in.Method
+	if method == "" {
+		method = channels[0]
+	}
+	if !contains(channels, method) {
+		problem(w, 422, "METHOD_NOT_AVAILABLE", "That way of paying is not available for this booking.")
+		return
+	}
 	if quote.State != "held" || !quote.ExpiresAt.After(time.Now()) || quote.Paused || !quote.Ready {
 		problem(w, 409, "CHECKOUT_NOT_READY", "The quote, seller readiness or time hold is no longer valid.")
 		return
 	}
 	if !quote.HasPayoutAccount {
-		problem(w, 503, "SELLER_PAYOUT_NOT_READY", "This seller has not added a bank account for payouts yet.")
+		problem(w, 503, "SELLER_PAYOUT_NOT_READY", "This seller has not added a payout account yet.")
 		return
 	}
 	price := quote.GrossMinor
-	platformFee, bps, err := approvedPlatformFee(price)
+	platformFee, bps, err := approvedPlatformFee(price, currency)
 	if err != nil {
 		problem(w, 422, "AMOUNT_NOT_APPROVED", err.Error())
 		return
 	}
-	// The buyer pays the bank's fee on top; the seller's price is untouched.
-	buyerFee, err := a.buyerTransferFee(r.Context(), method, price)
-	if err != nil {
-		problem(w, 503, "CHANNEL_COST_NOT_APPROVED", "This way of paying does not have an approved fee schedule.")
-		return
+	// The buyer pays Kora's fee on top, at Kora's current rate: Kora adds it
+	// itself. An approved fee schedule, when there is one, only gives the
+	// buyer an estimate before a hosted payment page shows the exact total.
+	estimate, estErr := a.buyerTransferFee(r.Context(), currency, method, price)
+	if estErr != nil {
+		estimate = 0
 	}
-	amount := price + buyerFee
-	if err = a.ensureChannelEconomics(r.Context(), amount, platformFee+buyerFee, []string{method}); err != nil {
-		problem(w, 503, "CHANNEL_COST_NOT_APPROVED", "This way of paying does not have an approved fee schedule within the five-percent limit.")
-		return
-	}
+	hosted := method != "bank_transfer"
 	// Reuse an attempt the buyer can still complete: the same transfer
-	// account, or the same card page, rather than creating a second charge.
+	// account, or the same payment page, rather than creating a second charge.
 	var existingID, existingRef, existingState, existingURL string
 	var existingDetails []byte
 	var existingExpiry *time.Time
-	err = a.db.QueryRow(r.Context(), `SELECT id::text,merchant_reference,canonical_state,COALESCE(authorization_url,''),transfer_details,instructions_expire_at FROM payment_attempts WHERE quote_id=$1 AND channel=$2 AND canonical_state='awaiting_payment' ORDER BY created_at DESC LIMIT 1`, quote.ID, method).Scan(&existingID, &existingRef, &existingState, &existingURL, &existingDetails, &existingExpiry)
+	var existingTotal, existingFee int64
+	err = a.db.QueryRow(r.Context(), `SELECT id::text,merchant_reference,canonical_state,COALESCE(authorization_url,''),transfer_details,instructions_expire_at,expected_minor,buyer_fee_minor FROM payment_attempts WHERE quote_id=$1 AND channel=$2 AND canonical_state='awaiting_payment' ORDER BY created_at DESC LIMIT 1`, quote.ID, method).Scan(&existingID, &existingRef, &existingState, &existingURL, &existingDetails, &existingExpiry, &existingTotal, &existingFee)
 	if err == nil {
-		if method == "card" && existingURL != "" {
-			jsonOut(w, 200, map[string]any{"payment_attempt_id": existingID, "reference": existingRef, "method": method, "authorization_url": existingURL, "state": "awaiting_payment", "price_minor": price, "fee_minor": buyerFee, "total_minor": amount})
+		if hosted && existingURL != "" {
+			jsonOut(w, 200, map[string]any{"payment_attempt_id": existingID, "reference": existingRef, "method": method, "authorization_url": existingURL, "state": "awaiting_payment", "price_minor": price, "fee_minor": estimate, "total_minor": price + estimate, "fee_is_estimate": true, "currency": currency})
 			return
 		}
-		if method != "card" && existingExpiry != nil && existingExpiry.After(time.Now().Add(2*time.Minute)) && len(existingDetails) > 0 {
-			jsonOut(w, 200, map[string]any{"payment_attempt_id": existingID, "reference": existingRef, "method": method, "transfer": json.RawMessage(existingDetails), "state": "awaiting_payment", "price_minor": price, "fee_minor": buyerFee, "total_minor": amount})
+		if !hosted && existingExpiry != nil && existingExpiry.After(time.Now().Add(2*time.Minute)) && len(existingDetails) > 0 {
+			jsonOut(w, 200, map[string]any{"payment_attempt_id": existingID, "reference": existingRef, "method": method, "transfer": json.RawMessage(existingDetails), "state": "awaiting_payment", "price_minor": price, "fee_minor": existingFee, "total_minor": existingTotal, "fee_is_estimate": false, "currency": currency})
 			return
 		}
 	} else if !errors.Is(err, pgx.ErrNoRows) {
@@ -289,15 +247,10 @@ func (a *API) initializeQuoteCheckout(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "DATABASE_ERROR", "Checkout could not be prepared.")
 		return
 	}
-	letter := "t"
-	if method == "card" {
-		letter = "c"
-	} else if method == "pay_with_bank" {
-		letter = "b"
-	}
+	letter := map[string]string{"bank_transfer": "t", "pay_with_bank": "b", "mobile_money": "m"}[method]
 	reference := fmt.Sprintf("wmt-%s-%s%d", strings.ReplaceAll(quote.ID, "-", ""), letter, previous+1)
 	environment := environmentOf(a)
-	attempt, err := queries.UpsertPaymentAttempt(r.Context(), store.UpsertPaymentAttemptParams{QuoteID: quote.ID, Environment: environment, Reference: reference, ExpectedMinor: amount, ApprovedFeeMinor: platformFee, FeeBasisPoints: int32(bps), Channel: method, BuyerFeeMinor: buyerFee})
+	attempt, err := queries.UpsertPaymentAttempt(r.Context(), store.UpsertPaymentAttemptParams{QuoteID: quote.ID, Environment: environment, Reference: reference, ExpectedMinor: price, Currency: currency, ApprovedFeeMinor: platformFee, FeeBasisPoints: int32(bps), Channel: method, BuyerFeeMinor: 0})
 	if err != nil {
 		problem(w, 503, "PAYMENT_INTENT_UNAVAILABLE", "The checkout could not be saved safely.")
 		return
@@ -317,10 +270,10 @@ func (a *API) initializeQuoteCheckout(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	req := checkoutRequest{Reference: reference, AmountMinor: amount, Currency: "NGN", Email: quote.BuyerEmail, Name: quote.BuyerName, WebhookURL: webhookURL(),
+	req := checkoutRequest{Reference: reference, AmountMinor: price, Currency: currency, Email: quote.BuyerEmail, Name: quote.BuyerName, WebhookURL: webhookURL(),
 		Narration: "WantMyTime booking", QuoteID: quote.ID, Channels: []string{method},
 		RedirectURL: origin + "/payment/return?quote_id=" + url.QueryEscape(quote.ID) + "&reference=" + url.QueryEscape(reference)}
-	if method == "card" || method == "pay_with_bank" {
+	if hosted {
 		checkoutURL, startErr := client.startCheckout(r.Context(), req)
 		if startErr != nil {
 			_ = queries.MarkInitializationUnknown(r.Context(), attempt.ID)
@@ -331,7 +284,7 @@ func (a *API) initializeQuoteCheckout(w http.ResponseWriter, r *http.Request) {
 			problem(w, 503, "PAYMENT_INITIALIZATION_UNKNOWN", "The payment page opened but could not be saved. Refresh and try again.")
 			return
 		}
-		jsonOut(w, 200, map[string]any{"payment_attempt_id": attempt.ID, "reference": reference, "method": method, "authorization_url": checkoutURL, "state": "awaiting_payment", "price_minor": price, "fee_minor": buyerFee, "total_minor": amount})
+		jsonOut(w, 200, map[string]any{"payment_attempt_id": attempt.ID, "reference": reference, "method": method, "authorization_url": checkoutURL, "state": "awaiting_payment", "price_minor": price, "fee_minor": estimate, "total_minor": price + estimate, "fee_is_estimate": true, "currency": currency})
 		return
 	}
 	details, err := client.startBankTransfer(r.Context(), req)
@@ -349,12 +302,17 @@ func (a *API) initializeQuoteCheckout(w http.ResponseWriter, r *http.Request) {
 	if !a.extendHold(r.Context(), w, quote.ID, until) {
 		return
 	}
+	// Kora quoted the exact total with its fee: record it on the attempt.
+	if _, err = a.db.Exec(r.Context(), `UPDATE payment_attempts SET expected_minor=$1, buyer_fee_minor=$2, updated_at=now() WHERE id=$3`, details.AmountMinor, details.FeeMinor, attempt.ID); err != nil {
+		problem(w, 503, "PAYMENT_INITIALIZATION_UNKNOWN", "The transfer account could not be saved. Refresh and try again; do not transfer yet.")
+		return
+	}
 	raw, _ := json.Marshal(details)
 	if saved, saveErr := queries.SaveTransferInstructions(r.Context(), store.SaveTransferInstructionsParams{Details: raw, ExpiresAt: details.ExpiresAt, ID: attempt.ID}); saveErr != nil || saved != 1 {
 		problem(w, 503, "PAYMENT_INITIALIZATION_UNKNOWN", "The transfer account could not be saved. Refresh and try again; do not transfer yet.")
 		return
 	}
-	jsonOut(w, 200, map[string]any{"payment_attempt_id": attempt.ID, "reference": reference, "method": method, "transfer": details, "state": "awaiting_payment", "price_minor": price, "fee_minor": buyerFee, "total_minor": amount})
+	jsonOut(w, 200, map[string]any{"payment_attempt_id": attempt.ID, "reference": reference, "method": method, "transfer": details, "state": "awaiting_payment", "price_minor": price, "fee_minor": details.FeeMinor, "total_minor": details.AmountMinor, "fee_is_estimate": false, "currency": currency})
 }
 
 func (a *API) extendHold(ctx context.Context, w http.ResponseWriter, quoteID string, until time.Time) bool {
@@ -467,4 +425,11 @@ func (a *API) koraWebhook(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// paymentRouteHoldPayout reports whether the collect, hold and pay-out route is
+// configured. "escrow_payout" is the older name and is still accepted.
+func paymentRouteHoldPayout() bool {
+	r := strings.TrimSpace(os.Getenv("PAYMENT_ROUTE"))
+	return r == "hold_payout" || r == "escrow_payout"
 }

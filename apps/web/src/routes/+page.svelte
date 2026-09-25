@@ -39,12 +39,12 @@
 	}
 </script>
 
-<svelte:head><title>WantMyTime — put a price on your time</title><meta name="description" content="One link for anyone who wants your time. They pick a slot and pay by bank transfer. You get paid after the call." /></svelte:head>
+<svelte:head><title>WantMyTime — put a price on your time</title><meta name="description" content="One link for anyone who wants your time. They pick a slot and pay. You get paid after the call." /></svelte:head>
 <div class="brand-home">
 	<section class="brand-hero">
 		<div class="brand-hero-top"><span>YOUR TIME HAS A PRICE</span><span>NAME IT</span></div>
 		<div class="brand-hero-grid">
-			<div class="brand-hero-copy"><p class="brand-overline">FOR EVERYONE WHO KEEPS GETTING ASKED</p><h1><span>WANT MY TIME?</span><br /><span><em>BOOK IT.</em></span></h1><p class="brand-description">One link for anyone who wants your time. They pick a slot, pay by bank transfer, and show up. The money lands in your account about three hours after the call.</p><form class="brand-claim" onsubmit={(event) => { event.preventDefault(); claim(); }}><label for="brand-handle">START WITH YOUR NAME</label><div><span>wantmytime.com/</span><input id="brand-handle" bind:value={handle} placeholder="yourname" autocomplete="off" /><button type="submit">CLAIM YOUR LINK <span aria-hidden="true">↗</span></button></div>{#if handleError}<p role="alert">{handleError}</p>{/if}</form><p class="brand-note">Free to set up. You only pay when you get paid.</p></div>
+			<div class="brand-hero-copy"><p class="brand-overline">FOR EVERYONE WHO KEEPS GETTING ASKED</p><h1><span>WANT MY TIME?</span><br /><span><em>BOOK IT.</em></span></h1><p class="brand-description">One link for anyone who wants your time. They pick a slot in their own timezone, pay, and show up. The money lands in your account about three hours after the call.</p><form class="brand-claim" onsubmit={(event) => { event.preventDefault(); claim(); }}><label for="brand-handle">START WITH YOUR NAME</label><div><span>wantmytime.com/</span><input id="brand-handle" bind:value={handle} placeholder="yourname" autocomplete="off" /><button type="submit">CLAIM YOUR LINK <span aria-hidden="true">↗</span></button></div>{#if handleError}<p role="alert">{handleError}</p>{/if}</form><p class="brand-note">Free to set up. You only pay when you get paid.</p></div>
 			<div class="brand-timepiece"><TimeDial {duration} /><div class="brand-duration"><span>CHOOSE A LENGTH</span><div role="group" aria-label="Explore conversation lengths">{#each [15, 30, 60] as option}<button type="button" class:active={duration === option} aria-pressed={duration === option} onclick={() => duration = option}>{option}<small>MIN</small></button>{/each}</div></div><p class="brand-timepiece-note" aria-live="polite">{durationNotes[duration]}</p></div>
 		</div>
 		<div class="brand-hero-bottom"><span>ONE LINK</span><span>YOUR HOURS</span><span>YOUR PRICE</span><span>PAID AFTER THE CALL</span></div>

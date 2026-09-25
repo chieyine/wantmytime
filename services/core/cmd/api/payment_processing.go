@@ -157,8 +157,9 @@ func (a *API) applyVerifiedCharge(ctx context.Context, reference string, provide
 	expectedCurrency := strings.TrimSpace(attempt.Currency)
 	platformFee := *attempt.ApprovedFeeMinor
 	bps := *attempt.FeeBasisPoints
-	// expected is what the buyer sent: the seller's price plus the transfer
-	// fee the buyer paid on top.
+	// expected is what the buyer was asked for: the seller's price plus any
+	// fee Kora already quoted (a transfer account). For a hosted payment page
+	// Kora's fee is only known now, from the verified charge.
 	buyerFee := attempt.BuyerFeeMinor
 	price := expected - buyerFee
 	if buyerFee < 0 || price <= 0 || platformFee < 0 || platformFee > price || bps < 0 || bps > 500 {
@@ -173,6 +174,10 @@ func (a *API) applyVerifiedCharge(ctx context.Context, reference string, provide
 		if err := a.recordPaymentException(ctx, q, attempt, txn, kind, reference, amount, currency, reason); err != nil {
 			return "", err
 		}
+		// Money that cannot become a booking goes straight back to the buyer.
+		if err := a.returnUnbookedPayment(ctx, tx, attempt.ID, quoteID, kind, amount, currency); err != nil {
+			return "", err
+		}
 		return "", tx.Commit(ctx)
 	}
 	if provider.Status != "success" {
@@ -185,12 +190,24 @@ func (a *API) applyVerifiedCharge(ctx context.Context, reference string, provide
 		}
 		return "", tx.Commit(ctx)
 	}
-	if provider.Reference != reference || provider.Currency != expectedCurrency || provider.AmountMinor != expected {
+	// Kora reports the charge either as the price (its fee on top, paid by
+	// the buyer) or as the full amount the buyer was asked for.
+	amountOK := provider.AmountMinor == expected || provider.AmountMinor == price || (provider.FeeMinor > 0 && provider.AmountMinor == price+provider.FeeMinor)
+	if provider.Reference != reference || provider.Currency != expectedCurrency || !amountOK {
 		kind := "wrong_amount"
 		if provider.Currency != expectedCurrency {
 			kind = "wrong_currency"
 		}
-		return exception(kind, provider.AmountMinor, provider.Currency, fmt.Sprintf("The provider confirmed %d %s; the booking needs %d %s.", provider.AmountMinor, provider.Currency, expected, expectedCurrency))
+		reason := fmt.Sprintf("The provider confirmed %d %s; the booking needs %d %s.", provider.AmountMinor, provider.Currency, expected, expectedCurrency)
+		// Kora took the money but it can't pay for this booking: send it
+		// back automatically. A reference mismatch is only recorded.
+		if provider.Reference == reference && provider.AmountMinor > 0 {
+			return exception(kind, provider.AmountMinor, provider.Currency, reason+" It is refunded.")
+		}
+		if err := a.recordPaymentException(ctx, q, attempt, txn, kind, reference, provider.AmountMinor, provider.Currency, fmt.Sprintf("The provider confirmed %d %s; the booking needs %d %s.", provider.AmountMinor, provider.Currency, expected, expectedCurrency)); err != nil {
+			return "", err
+		}
+		return "", tx.Commit(ctx)
 	}
 	channel := provider.Channel
 	if channel == "" {
@@ -208,29 +225,20 @@ func (a *API) applyVerifiedCharge(ctx context.Context, reference string, provide
 	if provider.FeeMinor < 0 {
 		return exception("settlement_mismatch", provider.FeeMinor, expectedCurrency, "Verified processor cost is negative.")
 	}
-	if provider.FeeMinor > platformFee+buyerFee {
-		// A card issued abroad costs more than a local one, and the checkout
-		// could not know which card the buyer would use. When international
-		// cards are enabled and the fee fits the approved international
-		// schedule, the platform absorbs the difference instead of leaving a
-		// paid buyer without a booking. Anything else needs review.
-		ok, reason := a.acceptInternationalCardFee(ctx, q, provider, expected)
-		if !ok {
-			return exception("settlement_mismatch", provider.FeeMinor, expectedCurrency, reason)
+	// The buyer bore Kora's fee at Kora's current rate, so it never touches
+	// the seller's share or WantMyTime's fee: record what they actually paid.
+	if !(provider.AmountMinor == expected && buyerFee > 0) && provider.FeeMinor != buyerFee {
+		buyerFee = provider.FeeMinor
+		expected = price + buyerFee
+		if _, err = tx.Exec(ctx, `UPDATE payment_attempts SET expected_minor=$1, buyer_fee_minor=$2, updated_at=now() WHERE id=$3`, expected, buyerFee, attempt.ID); err != nil {
+			return "", err
 		}
-		a.log().InfoContext(ctx, "international card fee absorbed", "reference", reference, "card_country", provider.CardCountry, "processor_fee_minor", provider.FeeMinor, "platform_fee_minor", platformFee)
 	}
 	if attempt.BookingID == nil {
-		// Another attempt for this quote (say, a card after starting a
+		// Another attempt for this quote (say, pay with bank after starting a
 		// transfer) may already have paid for it: this one is a second charge.
 		if existing, lookupErr := q.BookingIDForQuote(ctx, quoteID); lookupErr == nil && existing != "" {
-			if err = addPaymentException(ctx, q, attempt.ID, quoteID, "duplicate_charge", reference, provider.AmountMinor, provider.Currency, "The buyer paid twice for one booking (two payment attempts). Refund this one."); err != nil {
-				return "", err
-			}
-			if err = q.MarkPaymentAttemptException(ctx, store.MarkPaymentAttemptExceptionParams{TransactionID: txn, ID: attempt.ID}); err != nil {
-				return "", err
-			}
-			return "", tx.Commit(ctx)
+			return exception("duplicate_charge", provider.AmountMinor, provider.Currency, "The buyer paid twice for one booking (two payment attempts). This one is refunded.")
 		} else if lookupErr != nil && !errors.Is(lookupErr, pgx.ErrNoRows) {
 			return "", lookupErr
 		}
@@ -257,14 +265,25 @@ func (a *API) applyVerifiedCharge(ctx context.Context, reference string, provide
 	}
 	now := time.Now()
 	if quote.State != "held" || !quote.ExpiresAt.After(now) || !hold.Active || hold.ExpiresAt == nil || !hold.ExpiresAt.After(now) {
-		return exception("payment_without_slot", expected, expectedCurrency, "Verified charge arrived after the slot hold expired or was released.")
+		// The hold lapsed before the money arrived (a slow transfer). If the
+		// time is still free and still inside the seller's hours, the buyer
+		// gets it anyway; only a time someone else has taken is refunded.
+		reclaimed := false
+		if quote.State == "held" || quote.State == "expired" {
+			if reclaimed, err = reclaimLateSlot(ctx, tx, quoteID, quote.SellerID, quote.StartsAt, int(quote.DurationMinutes)); err != nil {
+				return "", err
+			}
+		}
+		if !reclaimed {
+			return exception("payment_without_slot", expected, expectedCurrency, "The payment arrived after the time hold had lapsed and the time is no longer free. It is refunded.")
+		}
 	}
 	sellerAvailable, err := q.LockSellerAvailability(ctx, quote.SellerID)
 	if err != nil {
 		return "", err
 	}
 	if !sellerAvailable {
-		return exception("payment_without_slot", expected, expectedCurrency, "Verified charge belongs to a seller who is no longer available.")
+		return exception("payment_without_slot", expected, expectedCurrency, "The seller stopped taking bookings before the payment arrived. It is refunded.")
 	}
 	if quote.OfferID != nil {
 		// The quote hold was created while the agreement was open, and the hold
@@ -274,7 +293,7 @@ func (a *API) applyVerifiedCharge(ctx context.Context, reference string, provide
 			return "", offerErr
 		}
 		if offerState != "agreed" && offerState != "expired" {
-			return exception("offer_conflict", expected, expectedCurrency, "Verified charge belongs to an offer that was withdrawn, declined or already converted.")
+			return exception("offer_conflict", expected, expectedCurrency, "The payment belongs to an offer that was withdrawn, declined or already booked. It is refunded.")
 		}
 	}
 	bookingID, err := randomUUID()
@@ -339,31 +358,6 @@ func (a *API) applyVerifiedCharge(ctx context.Context, reference string, provide
 	return bookingID, nil
 }
 
-// internationalCardsEnabled reports whether foreign-issued cards are accepted.
-// International card payments must also be enabled on the Kora account.
-func internationalCardsEnabled() bool {
-	return os.Getenv("INTERNATIONAL_CARDS_ENABLED") == "true"
-}
-
-// acceptInternationalCardFee decides whether a processor fee above the
-// platform fee is an expected international-card fee.
-func (a *API) acceptInternationalCardFee(ctx context.Context, q *store.Queries, provider verifiedCharge, amount int64) (bool, string) {
-	if provider.Channel != "card" || provider.CardCountry == "NG" {
-		return false, "Verified processor cost exceeds the approved platform fee snapshot."
-	}
-	if !internationalCardsEnabled() {
-		return false, "An international card was charged while international cards are disabled; its fee exceeds the platform fee snapshot."
-	}
-	fee, err := q.ApprovedChannelFee(ctx, "card_international")
-	if err != nil {
-		return false, "An international card was charged but no approved international card fee schedule exists."
-	}
-	if provider.FeeMinor > expectedProcessorCost(amount, int(fee.PercentBps), fee.FixedMinor, fee.CapMinor) {
-		return false, "The international card fee exceeds the approved international fee schedule."
-	}
-	return true, ""
-}
-
 func environmentOf(a *API) string {
 	if a.env == "production" {
 		return "live"
@@ -383,13 +377,14 @@ func derefString(v *string) string {
 }
 
 // fundsAvailableAt is when a payment's money is in the balance and can be
-// paid out: at once for a bank transfer, after card settlement (the next
-// working day) for a card. CARD_SETTLEMENT_HOURS overrides the card wait.
+// paid out: at once for a bank transfer, and after Kora settles it for other
+// channels (pay with bank, mobile money): the next working day unless
+// SETTLEMENT_WAIT_HOURS says otherwise.
 func fundsAvailableAt(channel string, paid time.Time) time.Time {
 	if channel == "bank_transfer" {
 		return paid
 	}
-	hours, err := strconv.Atoi(os.Getenv("CARD_SETTLEMENT_HOURS"))
+	hours, err := strconv.Atoi(firstNonEmpty(os.Getenv("SETTLEMENT_WAIT_HOURS"), os.Getenv("CARD_SETTLEMENT_HOURS")))
 	if err != nil || hours < 0 || hours > 24*7 {
 		hours = 24
 	}
