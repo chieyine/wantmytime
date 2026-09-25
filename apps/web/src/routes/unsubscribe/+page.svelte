@@ -54,15 +54,14 @@
 		<p class="page-intro">{message} You can also change this under Settings when you sign in.</p>
 	{:else if subscribed}<h1 class="page-heading">Stop our news?</h1>
 		<p class="page-intro">
-			{email} gets news and offers from WantMyTime and Kredit Technologies. Booking and payment emails are separate and keep
-			coming either way.
+			{email} gets our news and offers. Booking and payment emails are separate and keep coming either way.
 		</p>
 		<button class="button" onclick={() => choose(false)} disabled={busy}
 			>{busy ? 'Saving…' : 'Unsubscribe'} <span aria-hidden="true">↗</span></button
 		>
 	{:else}<h1 class="page-heading">You’re unsubscribed.</h1>
 		<p class="page-intro">
-			{email} won’t get news from WantMyTime or Kredit Technologies. Booking and payment emails still come as usual.
+			{email} won’t get our news. Booking and payment emails still come as usual.
 		</p>
 		<button class="button button-secondary" onclick={() => choose(true)} disabled={busy}
 			>{busy ? 'Saving…' : 'Subscribe again'}</button

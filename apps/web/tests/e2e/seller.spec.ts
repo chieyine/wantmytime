@@ -30,8 +30,8 @@ test('a buyer books and pays, and the seller sees the booking', async ({ page, b
 	await buyer.getByRole('link', { name: /pick a time/i }).click();
 	await expect(buyer).toHaveURL(/\/book\/new/);
 	await buyer.getByRole('group', { name: 'Available times' }).getByRole('button').first().click();
-	await expect(buyer.getByLabel(/Email me news/)).toBeChecked();
-	await buyer.getByLabel(/Email me news/).uncheck();
+	await expect(buyer.getByLabel(/Send me news/)).toBeChecked();
+	await buyer.getByLabel(/Send me news/).uncheck();
 	await buyer.getByLabel('Your name').fill('Kemi Ade');
 	await buyer.getByLabel('Email', { exact: true }).fill(`kemi.${seller.tag}@e2e.test`);
 	await buyer.getByRole('button', { name: /continue to payment/i }).click();

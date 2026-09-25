@@ -20,7 +20,7 @@ import (
 
 // marketingWording is the exact sentence people agree to. It is stored with
 // every consent, so a later change of wording never rewrites what someone saw.
-const marketingWording = "Email me news and offers from WantMyTime and Kredit Technologies, including kredit.ng. Unsubscribe any time."
+const marketingWording = "Send me news and offers. Unsubscribe any time."
 
 var marketingSources = map[string]bool{"seller_signup": true, "booking": true, "offer": true, "settings": true}
 
@@ -393,7 +393,7 @@ func broadcastMessage(b broadcast, to, token string) emailMessage {
 		Preheader:   b.heading,
 		Heading:     b.heading,
 		Paragraphs:  paragraphs,
-		Footer:      "You’re getting this because you said yes to news from WantMyTime and Kredit Technologies.",
+		Footer:      "You’re getting this because you asked for our news.",
 		Unsubscribe: &emailLink{Label: "Unsubscribe", URL: unsubscribeURL(token)},
 	}
 	if b.actionLabel != nil && b.actionURL != nil {

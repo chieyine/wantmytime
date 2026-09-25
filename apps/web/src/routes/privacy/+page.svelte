@@ -65,8 +65,8 @@
 		</li>
 		<li><b>With your consent</b>: connecting Google Calendar. You can disconnect at any time.</li>
 		<li>
-			<b>With your consent</b>: news and offers from WantMyTime and our company, Kredit Technologies, including
-			kredit.ng. We ask when you sign up, book or make an offer. Untick the box to say no, and unsubscribe any time with
+			<b>With your consent</b>: our news and offers, which can include other Kredit Technologies products such as
+			kredit.ng. We ask when you sign up, book or make an offer, and you can untick the box. Unsubscribe any time with
 			the link in every email or under Settings. We keep a record of when you agreed and the wording you saw. Saying no
 			never affects your bookings, and booking emails keep coming either way.
 		</li>
