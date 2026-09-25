@@ -34,14 +34,16 @@ The product code is complete for buyers and sellers in every flow (see [FLOW_WAL
 
 - [ ] Choose the host; production PostgreSQL (with point-in-time recovery), Redis, and two Cloudflare R2 buckets (photos, backups).
 - [ ] Generate every secret and key (`openssl rand -base64 32` / `48`) into the secret manager; the API refuses to start in production with weak, reused or missing ones.
-- [ ] `aside-api migrate` (migrations 001 to 024), then deploy the API, web app and gateway with TLS on `wantmytime.com`.
+- [ ] `aside-api migrate` (migrations 001 to 027), then deploy the API, web app and gateway with TLS on `wantmytime.com`.
 - [ ] Backups running and one restore drill done (OPERATIONS.md).
-- [ ] Run the test suite once in CI or on your machine before the first deploy (`make verify` needs PostgreSQL for the integration tests).
+- [ ] CI green on the pull request (`.github/workflows/ci.yml`: lint, type check, build, Go unit and integration tests, end-to-end tests). To run it locally, see the README.
 
 ## 5. Operations
 
 - [ ] Sign in with your email, then run `aside-api bootstrap-admin <your email>` with your authenticator secret; verify at `/ops/access`.
 - [ ] `ALERT_EMAILS` set to where alerts should go; `SENTRY_DSN` and `PUBLIC_SENTRY_DSN` if you want error reports.
+- [ ] Announcements: run `bootstrap-admin` again (same authenticator secret) so your account gets `ops:marketing:send`; set `EMAIL_MARKETING_FROM` to a sender on its own subdomain (for example `news@news.wantmytime.com`) verified with SPF, DKIM and DMARC.
+- [ ] Legal check of the news consent: the box is pre-ticked, which GDPR does not accept and the NDPA may not either. Unticking it by default is a one-line change (`MarketingConsent.svelte`).
 
 ## 6. Optional: Google Calendar and Meet
 
