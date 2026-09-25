@@ -55,7 +55,7 @@ jobs:
       TEST_DATABASE_URL: postgres://aside:aside@127.0.0.1:5432/postgres?sslmode=disable
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: services/core/go.mod
           cache-dependency-path: services/core/go.sum
@@ -90,7 +90,7 @@ jobs:
         working-directory: apps/web
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: services/core/go.mod
           cache-dependency-path: services/core/go.sum
