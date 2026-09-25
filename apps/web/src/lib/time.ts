@@ -13,7 +13,12 @@ export function viewerTimeZone(): string {
 /** Today's date (YYYY-MM-DD) in a zone, for date inputs. */
 export function todayIn(zone: string): string {
 	try {
-		return new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+		return new Intl.DateTimeFormat('en-CA', {
+			timeZone: zone,
+			year: 'numeric',
+			month: '2-digit',
+			day: '2-digit'
+		}).format(new Date());
 	} catch {
 		return new Date().toISOString().slice(0, 10);
 	}
@@ -27,7 +32,11 @@ export function zoneCity(zone: string): string {
 
 function offsetAt(zone: string, at: Date): string {
 	try {
-		return new Intl.DateTimeFormat('en-US', { timeZone: zone, timeZoneName: 'longOffset' }).formatToParts(at).find((p) => p.type === 'timeZoneName')?.value ?? zone;
+		return (
+			new Intl.DateTimeFormat('en-US', { timeZone: zone, timeZoneName: 'longOffset' })
+				.formatToParts(at)
+				.find((p) => p.type === 'timeZoneName')?.value ?? zone
+		);
 	} catch {
 		return zone;
 	}
@@ -41,7 +50,12 @@ export function sameClock(a: string, b: string, at: Date = new Date()): boolean 
 /** A short time in a given zone with its abbreviation, e.g. "3:00 PM WAT". */
 export function clockIn(iso: string, zone: string): string {
 	try {
-		return new Intl.DateTimeFormat(undefined, { timeZone: zone, hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(iso));
+		return new Intl.DateTimeFormat(undefined, {
+			timeZone: zone,
+			hour: 'numeric',
+			minute: '2-digit',
+			timeZoneName: 'short'
+		}).format(new Date(iso));
 	} catch {
 		return new Date(iso).toLocaleTimeString();
 	}
@@ -50,7 +64,9 @@ export function clockIn(iso: string, zone: string): string {
 /** Just the clock time in a zone, e.g. "3:00 PM", for lists under a chosen date. */
 export function timeOnly(iso: string, zone: string): string {
 	try {
-		return new Intl.DateTimeFormat(undefined, { timeZone: zone, hour: 'numeric', minute: '2-digit' }).format(new Date(iso));
+		return new Intl.DateTimeFormat(undefined, { timeZone: zone, hour: 'numeric', minute: '2-digit' }).format(
+			new Date(iso)
+		);
 	} catch {
 		return new Date(iso).toLocaleTimeString();
 	}
@@ -59,7 +75,15 @@ export function timeOnly(iso: string, zone: string): string {
 /** A full date and time in a given zone, e.g. "Thursday, 24 September 2026 at 3:00 PM WAT". */
 export function dateTimeIn(iso: string, zone: string): string {
 	try {
-		return new Intl.DateTimeFormat(undefined, { timeZone: zone, dateStyle: 'full', timeStyle: 'short' }).format(new Date(iso)) + ' ' + (new Intl.DateTimeFormat('en-US', { timeZone: zone, timeZoneName: 'short' }).formatToParts(new Date(iso)).find((p) => p.type === 'timeZoneName')?.value ?? '');
+		return (
+			new Intl.DateTimeFormat(undefined, { timeZone: zone, dateStyle: 'full', timeStyle: 'short' }).format(
+				new Date(iso)
+			) +
+			' ' +
+			(new Intl.DateTimeFormat('en-US', { timeZone: zone, timeZoneName: 'short' })
+				.formatToParts(new Date(iso))
+				.find((p) => p.type === 'timeZoneName')?.value ?? '')
+		);
 	} catch {
 		return new Date(iso).toLocaleString();
 	}

@@ -9,11 +9,16 @@ export type PushState = 'unsupported' | 'install-first' | 'blocked' | 'off' | 'o
 type Config = { enabled: boolean; public_key?: string };
 
 function isIOS(): boolean {
-	return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+	return (
+		/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+	);
 }
 
 function isStandalone(): boolean {
-	return window.matchMedia('(display-mode: standalone)').matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
+	return (
+		window.matchMedia('(display-mode: standalone)').matches ||
+		(navigator as Navigator & { standalone?: boolean }).standalone === true
+	);
 }
 
 function keyBytes(base64url: string): Uint8Array<ArrayBuffer> {
@@ -49,7 +54,9 @@ export async function enablePush(): Promise<PushState> {
 	if (permission !== 'granted') return permission === 'denied' ? 'blocked' : 'off';
 	const reg = await registration();
 	await navigator.serviceWorker.ready;
-	const sub = (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(cfg.public_key) }));
+	const sub =
+		(await reg.pushManager.getSubscription()) ??
+		(await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(cfg.public_key) }));
 	await api('/api/v1/push/subscriptions', { method: 'POST', body: JSON.stringify(sub.toJSON()) });
 	return 'on';
 }
@@ -58,7 +65,10 @@ export async function disablePush(): Promise<PushState> {
 	const reg = await navigator.serviceWorker.getRegistration('/');
 	const sub = reg ? await reg.pushManager.getSubscription() : null;
 	if (sub) {
-		await api('/api/v1/push/subscriptions', { method: 'DELETE', body: JSON.stringify({ endpoint: sub.endpoint }) }).catch(() => undefined);
+		await api('/api/v1/push/subscriptions', {
+			method: 'DELETE',
+			body: JSON.stringify({ endpoint: sub.endpoint })
+		}).catch(() => undefined);
 		await sub.unsubscribe();
 	}
 	return 'off';
@@ -70,5 +80,8 @@ export async function refreshPush(): Promise<void> {
 	if ((await pushState()) !== 'on') return;
 	const reg = await navigator.serviceWorker.getRegistration('/');
 	const sub = reg ? await reg.pushManager.getSubscription() : null;
-	if (sub) await api('/api/v1/push/subscriptions', { method: 'POST', body: JSON.stringify(sub.toJSON()) }).catch(() => undefined);
+	if (sub)
+		await api('/api/v1/push/subscriptions', { method: 'POST', body: JSON.stringify(sub.toJSON()) }).catch(
+			() => undefined
+		);
 }

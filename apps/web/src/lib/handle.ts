@@ -1,6 +1,34 @@
 // A seller's link is wantmytime.com/<handle>. These rules match the API's
 // validHandle: 3 to 24 lowercase letters, numbers or single inner hyphens.
-const reserved = new Set(['api', 'metrics', 'status', 'healthz', 'app', 'ops', 'admin', 'login', 'claim', 'help', 'pricing', 'terms', 'privacy', 'booking', 'offer', 'checkout', 'payment', 'auth', 'r', 'og', 'access', 'health', 'dev', 'settings', 'support', 'www', 'assets']);
+const reserved = new Set([
+	'api',
+	'metrics',
+	'status',
+	'healthz',
+	'app',
+	'ops',
+	'admin',
+	'login',
+	'claim',
+	'help',
+	'pricing',
+	'terms',
+	'privacy',
+	'booking',
+	'offer',
+	'checkout',
+	'payment',
+	'auth',
+	'r',
+	'og',
+	'access',
+	'health',
+	'dev',
+	'settings',
+	'support',
+	'www',
+	'assets'
+]);
 
 export const handlePattern = '[a-zA-Z0-9]+(-[a-zA-Z0-9]+)*';
 

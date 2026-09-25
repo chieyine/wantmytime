@@ -4,8 +4,36 @@
 	import { formatMoney, methodLabels } from '$lib/money';
 	let { params } = $props();
 
-	type Quote = { id: string; state: string; gross_minor: string; currency?: string; seller_country?: string; duration_minutes: number; starts_at: string; expires_at: string; seller: string; seller_name?: string; offer_id?: string | null; transfer_fee_minor?: number; method_fees?: Record<string, number>; booking_id: string | null; booking_payment_state: string | null; local_simulator: boolean; provider_checkout_enabled: boolean; cancellation_policy?: { name: string; summary: string }; payment_methods?: string[]; problem_window_minutes?: number };
-	type Transfer = { account_number: string; account_name: string; bank_name: string; amount_minor: number; fee_minor?: number; expires_at: string };
+	type Quote = {
+		id: string;
+		state: string;
+		gross_minor: string;
+		currency?: string;
+		seller_country?: string;
+		duration_minutes: number;
+		starts_at: string;
+		expires_at: string;
+		seller: string;
+		seller_name?: string;
+		offer_id?: string | null;
+		transfer_fee_minor?: number;
+		method_fees?: Record<string, number>;
+		booking_id: string | null;
+		booking_payment_state: string | null;
+		local_simulator: boolean;
+		provider_checkout_enabled: boolean;
+		cancellation_policy?: { name: string; summary: string };
+		payment_methods?: string[];
+		problem_window_minutes?: number;
+	};
+	type Transfer = {
+		account_number: string;
+		account_name: string;
+		bank_name: string;
+		amount_minor: number;
+		fee_minor?: number;
+		expires_at: string;
+	};
 	type Checkout = { reference: string; method: string; authorization_url?: string; transfer?: Transfer };
 
 	let quote = $state<Quote | null>(null);
@@ -27,9 +55,18 @@
 	const others = $derived(methods.slice(1));
 	const windowHours = $derived(Math.round((quote?.problem_window_minutes ?? 120) / 60));
 	const remaining = $derived(transfer ? Math.max(0, new Date(transfer.expires_at).getTime() - now) : 0);
-	const remainingLabel = $derived(`${Math.floor(remaining / 60000)}:${String(Math.floor((remaining % 60000) / 1000)).padStart(2, '0')}`);
-	const feeFor = (method: string) => quote?.method_fees?.[method] ?? (method === primary ? quote?.transfer_fee_minor ?? 0 : 0);
-	const againHref = $derived(quote ? (quote.offer_id ? `/offer/${encodeURIComponent(quote.offer_id)}` : `/book/new?seller=${encodeURIComponent(quote.seller)}&duration=${quote.duration_minutes}`) : '/');
+	const remainingLabel = $derived(
+		`${Math.floor(remaining / 60000)}:${String(Math.floor((remaining % 60000) / 1000)).padStart(2, '0')}`
+	);
+	const feeFor = (method: string) =>
+		quote?.method_fees?.[method] ?? (method === primary ? (quote?.transfer_fee_minor ?? 0) : 0);
+	const againHref = $derived(
+		quote
+			? quote.offer_id
+				? `/offer/${encodeURIComponent(quote.offer_id)}`
+				: `/book/new?seller=${encodeURIComponent(quote.seller)}&duration=${quote.duration_minutes}`
+			: '/'
+	);
 
 	onMount(async () => {
 		try {
@@ -50,7 +87,10 @@
 		busy = true;
 		message = '';
 		try {
-			const result = await api<{ booking_id: string }>(`/api/v1/dev/quotes/${encodeURIComponent(quote.id)}/simulate-payment`, { method: 'POST', body: '{}' });
+			const result = await api<{ booking_id: string }>(
+				`/api/v1/dev/quotes/${encodeURIComponent(quote.id)}/simulate-payment`,
+				{ method: 'POST', body: '{}' }
+			);
 			window.location.href = `/booking/${encodeURIComponent(result.booking_id)}`;
 		} catch (error) {
 			message = error instanceof Error ? error.message : 'The local booking could not be confirmed.';
@@ -63,7 +103,10 @@
 		busy = true;
 		message = '';
 		try {
-			const result = await api<Checkout>(`/api/v1/quotes/${encodeURIComponent(quote.id)}/checkout`, { method: 'POST', body: JSON.stringify({ method }) });
+			const result = await api<Checkout>(`/api/v1/quotes/${encodeURIComponent(quote.id)}/checkout`, {
+				method: 'POST',
+				body: JSON.stringify({ method })
+			});
 			reference = result.reference;
 			if (result.authorization_url) {
 				window.location.assign(result.authorization_url);
@@ -94,7 +137,10 @@
 	async function check() {
 		if (!quote || !reference) return;
 		try {
-			const result = await api<{ state: string; booking_id: string | null }>(`/api/v1/quotes/${encodeURIComponent(quote.id)}/verify-payment`, { method: 'POST', body: JSON.stringify({ reference }) });
+			const result = await api<{ state: string; booking_id: string | null }>(
+				`/api/v1/quotes/${encodeURIComponent(quote.id)}/verify-payment`,
+				{ method: 'POST', body: JSON.stringify({ reference }) }
+			);
 			if (result.booking_id) {
 				clearInterval(poll);
 				clearInterval(tick);
@@ -103,7 +149,8 @@
 				status = 'underpaid';
 			} else if (result.state === 'review') {
 				clearInterval(poll);
-				message = 'Your payment arrived, but the time couldn’t be booked. Don’t pay again: the full amount is being returned to you, and we’ve emailed you the details.';
+				message =
+					'Your payment arrived, but the time couldn’t be booked. Don’t pay again: the full amount is being returned to you, and we’ve emailed you the details.';
 			}
 		} catch {
 			// A missed check is fine; the next one retries.
@@ -122,7 +169,10 @@
 
 	function methodNote(method: string): string {
 		const fee = feeFor(method);
-		const feeLine = fee > 0 ? `The payment provider’s charge of about ${money(fee)} is added to the price; you see the exact total before you pay. ` : 'The payment provider’s charge is added to the price; you see the exact total before you pay. ';
+		const feeLine =
+			fee > 0
+				? `The payment provider’s charge of about ${money(fee)} is added to the price; you see the exact total before you pay. `
+				: 'The payment provider’s charge is added to the price; you see the exact total before you pay. ';
 		switch (method) {
 			case 'bank_transfer':
 				return `${feeLine}You’ll get an account number for this booking only. Transfer from any bank app; your booking is confirmed the moment the money arrives.`;
@@ -134,8 +184,18 @@
 		return feeLine;
 	}
 
-	const dateLabel = (value: string) => new Intl.DateTimeFormat(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(value));
-	const clock = (value: string) => new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(new Date(value));
+	const dateLabel = (value: string) =>
+		new Intl.DateTimeFormat(undefined, {
+			weekday: 'long',
+			day: 'numeric',
+			month: 'long',
+			year: 'numeric',
+			hour: 'numeric',
+			minute: '2-digit',
+			timeZoneName: 'short'
+		}).format(new Date(value));
+	const clock = (value: string) =>
+		new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(new Date(value));
 </script>
 
 <svelte:head><title>Review your time — WantMyTime</title></svelte:head>
@@ -155,48 +215,113 @@
 		</div>
 
 		{#if quote.state === 'expired'}
-			<div class="notice notice-warning">That hold ran out, so the time was released. Pick it again if it’s still free.</div>
+			<div class="notice notice-warning">
+				That hold ran out, so the time was released. Pick it again if it’s still free.
+			</div>
 			<a class="button button-secondary" href={againHref}>Pick a time again</a>
 		{:else if quote.local_simulator && quote.state === 'held'}
 			<div class="notice notice-warning">Test setup: this button confirms the booking without any money moving.</div>
 			{#if message}<p class="notice notice-warning" role="alert">{message}</p>{/if}
-			<button class="button" onclick={simulate} disabled={busy}>{busy ? 'Confirming local test…' : 'Confirm test booking'} <span>↗</span></button>
+			<button class="button" onclick={simulate} disabled={busy}
+				>{busy ? 'Confirming local test…' : 'Confirm test booking'} <span>↗</span></button
+			>
 		{:else if quote.state === 'converted'}
-			<div class="notice notice-info">{quote.booking_payment_state === 'simulated' ? 'This booking was confirmed in the local simulator. No money was collected.' : 'Your payment was received and your booking is confirmed.'}</div>
-			{#if quote.booking_id}<a class="button" href={`/booking/${encodeURIComponent(quote.booking_id)}`}>View booking ↗</a>{/if}
+			<div class="notice notice-info">
+				{quote.booking_payment_state === 'simulated'
+					? 'This booking was confirmed in the local simulator. No money was collected.'
+					: 'Your payment was received and your booking is confirmed.'}
+			</div>
+			{#if quote.booking_id}<a class="button" href={`/booking/${encodeURIComponent(quote.booking_id)}`}
+					>View booking ↗</a
+				>{/if}
 		{:else if quote.provider_checkout_enabled && quote.state === 'held' && methods.length}
 			{#if message}<p class="notice notice-warning" role="alert">{message}</p>{/if}
 
 			{#if transfer && status !== 'expired'}
 				<div class="transfer-box" aria-live="polite">
-					<p class="transfer-lead">Transfer exactly <strong>{money(transfer.amount_minor)}</strong> from your bank app to:</p>
+					<p class="transfer-lead">
+						Transfer exactly <strong>{money(transfer.amount_minor)}</strong> from your bank app to:
+					</p>
 					<dl>
-						<div><dt>Bank</dt><dd>{transfer.bank_name}</dd></div>
-						<div><dt>Account number</dt><dd class="transfer-number">{transfer.account_number} <button type="button" class="copy-button" onclick={() => copy('number', transfer!.account_number)}>{copied === 'number' ? 'Copied' : 'Copy'}</button></dd></div>
-						<div><dt>Account name</dt><dd>{transfer.account_name}</dd></div>
-						<div><dt>Amount</dt><dd>{money(transfer.amount_minor)} <button type="button" class="copy-button" onclick={() => copy('amount', (transfer!.amount_minor / 100).toFixed(transfer!.amount_minor % 100 ? 2 : 0))}>{copied === 'amount' ? 'Copied' : 'Copy'}</button></dd></div>
+						<div>
+							<dt>Bank</dt>
+							<dd>{transfer.bank_name}</dd>
+						</div>
+						<div>
+							<dt>Account number</dt>
+							<dd class="transfer-number">
+								{transfer.account_number}
+								<button type="button" class="copy-button" onclick={() => copy('number', transfer!.account_number)}
+									>{copied === 'number' ? 'Copied' : 'Copy'}</button
+								>
+							</dd>
+						</div>
+						<div>
+							<dt>Account name</dt>
+							<dd>{transfer.account_name}</dd>
+						</div>
+						<div>
+							<dt>Amount</dt>
+							<dd>
+								{money(transfer.amount_minor)}
+								<button
+									type="button"
+									class="copy-button"
+									onclick={() =>
+										copy('amount', (transfer!.amount_minor / 100).toFixed(transfer!.amount_minor % 100 ? 2 : 0))}
+									>{copied === 'amount' ? 'Copied' : 'Copy'}</button
+								>
+							</dd>
+						</div>
 					</dl>
-					{#if transfer.fee_minor}<p class="form-note">That’s {money(quote.gross_minor)} for the session plus the payment provider’s charge of {money(transfer.fee_minor)}.</p>{/if}
-					<p class="form-note">This account is for this booking only. Use it before {clock(transfer.expires_at)} ({remainingLabel} left).</p>
+					{#if transfer.fee_minor}<p class="form-note">
+							That’s {money(quote.gross_minor)} for the session plus the payment provider’s charge of {money(
+								transfer.fee_minor
+							)}.
+						</p>{/if}
+					<p class="form-note">
+						This account is for this booking only. Use it before {clock(transfer.expires_at)} ({remainingLabel} left).
+					</p>
 					{#if status === 'underpaid'}
-						<p class="notice notice-warning">The amount that arrived was less than {money(transfer.amount_minor)}, so it will be sent back to you. Please transfer the exact amount.</p>
+						<p class="notice notice-warning">
+							The amount that arrived was less than {money(transfer.amount_minor)}, so it will be sent back to you.
+							Please transfer the exact amount.
+						</p>
 					{:else}
-						<p class="transfer-waiting"><span class="pulse" aria-hidden="true"></span> Waiting for your transfer. This page confirms your booking as soon as it arrives, usually within a minute. You can close it; we’ll email you when it’s confirmed.</p>
+						<p class="transfer-waiting">
+							<span class="pulse" aria-hidden="true"></span> Waiting for your transfer. This page confirms your booking as
+							soon as it arrives, usually within a minute. You can close it; we’ll email you when it’s confirmed.
+						</p>
 					{/if}
 				</div>
-				{#each others as method}<button class="text-link" onclick={() => start(method)} disabled={busy}>Pay by {(methodLabels[method] ?? method).toLowerCase()} instead</button>{/each}
+				{#each others as method}<button class="text-link" onclick={() => start(method)} disabled={busy}
+						>Pay by {(methodLabels[method] ?? method).toLowerCase()} instead</button
+					>{/each}
 			{:else}
-				{#if status === 'expired'}<p class="notice notice-warning">That account has expired. Don’t transfer to it. If you already did, the money is returned automatically. Get new details below.</p>{/if}
-				<button class="button" onclick={() => start(primary)} disabled={busy}>{busy ? 'Getting your payment ready…' : `Pay by ${(methodLabels[primary] ?? primary).toLowerCase()}`}</button>
+				{#if status === 'expired'}<p class="notice notice-warning">
+						That account has expired. Don’t transfer to it. If you already did, the money is returned automatically. Get
+						new details below.
+					</p>{/if}
+				<button class="button" onclick={() => start(primary)} disabled={busy}
+					>{busy ? 'Getting your payment ready…' : `Pay by ${(methodLabels[primary] ?? primary).toLowerCase()}`}</button
+				>
 				<p class="form-note">{methodNote(primary)}</p>
 				{#each others as method}
-					<button class="text-link" onclick={() => start(method)} disabled={busy}>Pay by {(methodLabels[method] ?? method).toLowerCase()} instead</button>
+					<button class="text-link" onclick={() => start(method)} disabled={busy}
+						>Pay by {(methodLabels[method] ?? method).toLowerCase()} instead</button
+					>
 					<p class="form-note">{methodNote(method)}</p>
 				{/each}
 			{/if}
 
-			{#if quote.cancellation_policy}<p class="form-note"><strong>{quote.cancellation_policy.name} cancellation.</strong> {quote.cancellation_policy.summary} If the seller cancels, you get a full refund.</p>{/if}
-			<p class="form-note">WantMyTime holds your payment until after the session. If something goes wrong, report it from your booking page within {windowHours} hour{windowHours === 1 ? '' : 's'} of the end, and the seller isn’t paid until it’s sorted out.</p>
+			{#if quote.cancellation_policy}<p class="form-note">
+					<strong>{quote.cancellation_policy.name} cancellation.</strong>
+					{quote.cancellation_policy.summary} If the seller cancels, you get a full refund.
+				</p>{/if}
+			<p class="form-note">
+				WantMyTime holds your payment until after the session. If something goes wrong, report it from your booking page
+				within {windowHours} hour{windowHours === 1 ? '' : 's'} of the end, and the seller isn’t paid until it’s sorted out.
+			</p>
 		{:else}
 			<div class="notice notice-warning">Payments for this booking aren’t switched on yet. No payment was taken.</div>
 		{/if}

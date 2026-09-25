@@ -12,7 +12,9 @@ export const load: PageServerLoad = async ({ params, fetch, url }) => {
 		// An old link (or odd capitals) lands on the one address search engines and people should keep.
 		if (person.handle && person.handle !== params.handle) redirect(301, `/${person.handle}${url.search}`);
 		const mediaOrigin = env.PUBLIC_APP_ORIGIN || url.origin;
-		person.avatar_url = person.avatar_version ? `${mediaOrigin.replace(/\/$/, '')}/api/v1/people/${encodeURIComponent(person.handle)}/avatar?v=${person.avatar_version}` : '';
+		person.avatar_url = person.avatar_version
+			? `${mediaOrigin.replace(/\/$/, '')}/api/v1/people/${encodeURIComponent(person.handle)}/avatar?v=${person.avatar_version}`
+			: '';
 		person.preview_version = Math.max(1, Number(person.public_version || 1));
 		return { person, publicOrigin };
 	} catch (cause) {

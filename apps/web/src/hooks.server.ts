@@ -8,7 +8,15 @@ const privatePath = /^\/(app|ops|login|claim|verify|auth|booking|book|offer|chec
 
 function log(level: 'info' | 'warn' | 'error', message: string, fields: Record<string, unknown>) {
 	// One JSON object per line, matching the API and gateway logs.
-	console.log(JSON.stringify({ time: new Date().toISOString(), level: level.toUpperCase(), msg: message, service: 'web', ...fields }));
+	console.log(
+		JSON.stringify({
+			time: new Date().toISOString(),
+			level: level.toUpperCase(),
+			msg: message,
+			service: 'web',
+			...fields
+		})
+	);
 }
 
 // Origins only known at runtime, added to the Content Security Policy that
@@ -51,7 +59,8 @@ function securityHeaders(headers: Headers) {
 			'connect-src': [origin(publicEnv.PUBLIC_SENTRY_DSN)],
 			'img-src': [origin(publicEnv.PUBLIC_MEDIA_BASE_URL)]
 		});
-		if (env.APP_ENV === 'production' && !extended.includes('upgrade-insecure-requests')) extended += '; upgrade-insecure-requests';
+		if (env.APP_ENV === 'production' && !extended.includes('upgrade-insecure-requests'))
+			extended += '; upgrade-insecure-requests';
 		headers.set('content-security-policy', extended);
 	}
 }
@@ -77,7 +86,13 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 	const route = event.route.id ?? 'unmatched';
 	if (route !== '/health') {
-		log(response.status >= 500 ? 'warn' : 'info', 'request', { request_id: event.locals.requestId, method: event.request.method, route, status: response.status, duration_ms: Math.round(performance.now() - started) });
+		log(response.status >= 500 ? 'warn' : 'info', 'request', {
+			request_id: event.locals.requestId,
+			method: event.request.method,
+			route,
+			status: response.status,
+			duration_ms: Math.round(performance.now() - started)
+		});
 	}
 	return response;
 };
@@ -94,8 +109,20 @@ export const handleFetch: HandleFetch = async ({ event, request, fetch }) => {
 export const handleError: HandleServerError = ({ error, event, status, message }) => {
 	const reference = event.locals.requestId || crypto.randomUUID().replaceAll('-', '');
 	if (status >= 500) {
-		log('error', 'unhandled server error', { request_id: reference, route: event.route.id ?? 'unmatched', status, error: error instanceof Error ? `${error.name}: ${error.message}` : String(error), stack: error instanceof Error ? error.stack : undefined });
-		reportError(error, { dsn: env.SENTRY_DSN, platform: 'node', environment: env.APP_ENV, release: env.APP_RELEASE, tags: { route: event.route.id ?? 'unmatched', status: String(status), request_id: reference } });
+		log('error', 'unhandled server error', {
+			request_id: reference,
+			route: event.route.id ?? 'unmatched',
+			status,
+			error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+			stack: error instanceof Error ? error.stack : undefined
+		});
+		reportError(error, {
+			dsn: env.SENTRY_DSN,
+			platform: 'node',
+			environment: env.APP_ENV,
+			release: env.APP_RELEASE,
+			tags: { route: event.route.id ?? 'unmatched', status: String(status), request_id: reference }
+		});
 	}
 	return { message: status >= 500 ? 'Something went wrong on our side.' : message, reference };
 };

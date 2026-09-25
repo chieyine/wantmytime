@@ -19,7 +19,9 @@ function target(dsn: string | undefined): Target | null {
 		const prefix = slash >= 0 ? `/${path.slice(0, slash)}` : '';
 		const project = slash >= 0 ? path.slice(slash + 1) : path;
 		if (url.username && project) {
-			parsed = { endpoint: `${url.protocol}//${url.host}${prefix}/api/${project}/envelope/?sentry_key=${encodeURIComponent(url.username)}&sentry_version=7` };
+			parsed = {
+				endpoint: `${url.protocol}//${url.host}${prefix}/api/${project}/envelope/?sentry_key=${encodeURIComponent(url.username)}&sentry_version=7`
+			};
 		}
 	} catch {
 		parsed = null;
@@ -41,7 +43,13 @@ function frames(stack: string | undefined) {
 		.map((line) => {
 			const match = line.match(/at (?:(.+?) \()?(.+?):(\d+):(\d+)\)?$/) ?? line.match(/^(.*)@(.+?):(\d+):(\d+)$/);
 			if (!match) return null;
-			return { function: match[1] || '?', filename: match[2].split('?')[0], lineno: Number(match[3]), colno: Number(match[4]), in_app: !match[2].includes('node_modules') };
+			return {
+				function: match[1] || '?',
+				filename: match[2].split('?')[0],
+				lineno: Number(match[3]),
+				colno: Number(match[4]),
+				in_app: !match[2].includes('node_modules')
+			};
 		})
 		.filter(Boolean);
 	return parsed.length ? { frames: parsed.reverse() } : undefined;
@@ -75,12 +83,19 @@ export function reportError(error: unknown, options: ReportOptions): void {
 		environment: options.environment || 'production',
 		release: options.release || undefined,
 		tags: options.tags ?? {},
-		exception: { values: [{ type: err.name || 'Error', value: err.message.slice(0, 1000), stacktrace: frames(err.stack) }] }
+		exception: {
+			values: [{ type: err.name || 'Error', value: err.message.slice(0, 1000), stacktrace: frames(err.stack) }]
+		}
 	};
 	const payload = JSON.stringify(event);
 	const body = `${JSON.stringify({ event_id: id, sent_at: new Date(now).toISOString() })}\n${JSON.stringify({ type: 'event' })}\n${payload}\n`;
 	try {
-		void fetch(t.endpoint, { method: 'POST', body, headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, keepalive: true }).catch(() => {});
+		void fetch(t.endpoint, {
+			method: 'POST',
+			body,
+			headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+			keepalive: true
+		}).catch(() => {});
 	} catch {
 		// Reporting must never affect the page or the request.
 	}

@@ -11,7 +11,11 @@ export function currencySymbol(currency = 'NGN'): string {
 
 function toMinor(minor: number | string | bigint | null | undefined): bigint {
 	try {
-		return typeof minor === 'bigint' ? minor : typeof minor === 'string' ? BigInt(minor.trim() || '0') : BigInt(Math.trunc(Number.isFinite(minor as number) ? (minor as number) : 0));
+		return typeof minor === 'bigint'
+			? minor
+			: typeof minor === 'string'
+				? BigInt(minor.trim() || '0')
+				: BigInt(Math.trunc(Number.isFinite(minor as number) ? (minor as number) : 0));
 	} catch {
 		return 0n;
 	}

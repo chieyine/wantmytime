@@ -1,6 +1,66 @@
 <script lang="ts">
-	import{onMount}from'svelte';import{api}from'$lib/api';import { formatMoney } from '$lib/money';import CursorPager from '$lib/components/CursorPager.svelte';type Payment={id:string;booking_id:string;provider:string;environment:string;reference:string;amount_minor:number;currency:string;state:string;created_at:string;last_verified_at:string|null};let payments=$state<Payment[]>([]);let message=$state('');let loading=$state(true);let nextCursor=$state('');
-	async function load(cursor=''){loading=true;message='';try{const q=cursor?`?cursor=${encodeURIComponent(cursor)}`:'';const page=await api<{payments:Payment[];next_cursor:string}>(`/api/v1/ops/payments${q}`);payments=cursor?[...payments,...page.payments]:page.payments;nextCursor=page.next_cursor}catch(e){message=e instanceof Error?e.message:'Payment attempts could not be loaded.'}finally{loading=false}}
-	onMount(()=>load());
+	import { onMount } from 'svelte';
+	import { api } from '$lib/api';
+	import { formatMoney } from '$lib/money';
+	import CursorPager from '$lib/components/CursorPager.svelte';
+	type Payment = {
+		id: string;
+		booking_id: string;
+		provider: string;
+		environment: string;
+		reference: string;
+		amount_minor: number;
+		currency: string;
+		state: string;
+		created_at: string;
+		last_verified_at: string | null;
+	};
+	let payments = $state<Payment[]>([]);
+	let message = $state('');
+	let loading = $state(true);
+	let nextCursor = $state('');
+	async function load(cursor = '') {
+		loading = true;
+		message = '';
+		try {
+			const q = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
+			const page = await api<{ payments: Payment[]; next_cursor: string }>(`/api/v1/ops/payments${q}`);
+			payments = cursor ? [...payments, ...page.payments] : page.payments;
+			nextCursor = page.next_cursor;
+		} catch (e) {
+			message = e instanceof Error ? e.message : 'Payment attempts could not be loaded.';
+		} finally {
+			loading = false;
+		}
+	}
+	onMount(() => load());
 </script>
-<svelte:head><title>Payments — Ops · WantMyTime</title></svelte:head><section class="form-page app-page"><a class="back-link" href="/ops">← Operations</a><p class="eyebrow">Payments</p><h1 class="page-heading">Provider attempts.</h1>{#if message}<div class="notice notice-warning">{message}</div>{/if}{#if loading&&!payments.length}<p class="page-intro">Loading payment attempts…</p>{:else if payments.length}<div class="list-stack">{#each payments as item}<a class="list-card" href={`/ops/payments/${encodeURIComponent(item.id)}`}><div><strong>{formatMoney(item.amount_minor,item.currency)} · {item.state.replaceAll('_',' ')}</strong><p>{item.provider} · {item.environment} · booking {item.booking_id}</p><small>{item.reference} · started {new Date(item.created_at).toLocaleString()}</small></div><span>Details ↗</span></a>{/each}</div><CursorPager cursor={nextCursor} busy={loading} onNext={()=>load(nextCursor)}/>{:else if !loading}<p class="page-intro">No provider payment attempts have been recorded.</p><div class="notice notice-warning">Live collection is disabled. Synthetic simulator bookings do not create provider payment records.</div>{/if}</section>
+
+<svelte:head><title>Payments — Ops · WantMyTime</title></svelte:head>
+<section class="form-page app-page">
+	<a class="back-link" href="/ops">← Operations</a>
+	<p class="eyebrow">Payments</p>
+	<h1 class="page-heading">Provider attempts.</h1>
+	{#if message}<div class="notice notice-warning">{message}</div>{/if}{#if loading && !payments.length}<p
+			class="page-intro"
+		>
+			Loading payment attempts…
+		</p>{:else if payments.length}<div class="list-stack">
+			{#each payments as item}<a class="list-card" href={`/ops/payments/${encodeURIComponent(item.id)}`}
+					><div>
+						<strong>{formatMoney(item.amount_minor, item.currency)} · {item.state.replaceAll('_', ' ')}</strong>
+						<p>{item.provider} · {item.environment} · booking {item.booking_id}</p>
+						<small>{item.reference} · started {new Date(item.created_at).toLocaleString()}</small>
+					</div>
+					<span>Details ↗</span></a
+				>{/each}
+		</div>
+		<CursorPager cursor={nextCursor} busy={loading} onNext={() => load(nextCursor)} />{:else if !loading}<p
+			class="page-intro"
+		>
+			No provider payment attempts have been recorded.
+		</p>
+		<div class="notice notice-warning">
+			Live collection is disabled. Synthetic simulator bookings do not create provider payment records.
+		</div>{/if}
+</section>

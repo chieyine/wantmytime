@@ -1,2 +1,57 @@
-<script lang="ts">import{onMount}from'svelte';import{api}from'$lib/api';import CursorPager from '$lib/components/CursorPager.svelte';type Item={id:string;seller_handle:string;seller_name:string;buyer_name:string;starts_at:string;deadline:string};let items=$state<Item[]>([]);let message=$state('');let cursor=$state('');let loading=$state(false);async function load(after=''){loading=true;try{const q=after?`?cursor=${encodeURIComponent(after)}`:'';const page=await api<{meetings:Item[];next_cursor:string}>(`/api/v1/ops/meetings/overdue${q}`);items=after?[...items,...page.meetings]:page.meetings;cursor=page.next_cursor}catch(e){message=e instanceof Error?e.message:'Delivery queue could not be loaded.'}finally{loading=false}}onMount(()=>load())</script>
-<svelte:head><title>Meeting delivery — Ops · WantMyTime</title></svelte:head><section class="form-page app-page"><a class="back-link" href="/ops">← Operations</a><p class="eyebrow">Delivery queue</p><h1 class="page-heading">Meeting links past their deadline.</h1>{#if message}<div class="notice notice-warning">{message}</div>{:else if items.length}<div class="list-stack">{#each items as item}<article class="list-card"><div><strong>{item.seller_name} · {item.seller_handle}</strong><p>For {item.buyer_name} · starts {new Date(item.starts_at).toLocaleString()}</p><small>Link due {new Date(item.deadline).toLocaleString()}</small><a class="text-link" href={`/ops/bookings/${encodeURIComponent(item.id)}`}>Open booking ↗</a></div></article>{/each}</div><CursorPager cursor={cursor} busy={loading} onNext={()=>load(cursor)}/>{:else if !loading}<p class="page-intro">No meeting links are currently overdue.</p>{/if}<div class="notice notice-info">This queue is live. The notification worker sends deadline reminders when an email transport is configured; delivery status is available under system health.</div></section>
+<script lang="ts">
+	import { onMount } from 'svelte';
+	import { api } from '$lib/api';
+	import CursorPager from '$lib/components/CursorPager.svelte';
+	type Item = {
+		id: string;
+		seller_handle: string;
+		seller_name: string;
+		buyer_name: string;
+		starts_at: string;
+		deadline: string;
+	};
+	let items = $state<Item[]>([]);
+	let message = $state('');
+	let cursor = $state('');
+	let loading = $state(false);
+	async function load(after = '') {
+		loading = true;
+		try {
+			const q = after ? `?cursor=${encodeURIComponent(after)}` : '';
+			const page = await api<{ meetings: Item[]; next_cursor: string }>(`/api/v1/ops/meetings/overdue${q}`);
+			items = after ? [...items, ...page.meetings] : page.meetings;
+			cursor = page.next_cursor;
+		} catch (e) {
+			message = e instanceof Error ? e.message : 'Delivery queue could not be loaded.';
+		} finally {
+			loading = false;
+		}
+	}
+	onMount(() => load());
+</script>
+
+<svelte:head><title>Meeting delivery — Ops · WantMyTime</title></svelte:head>
+<section class="form-page app-page">
+	<a class="back-link" href="/ops">← Operations</a>
+	<p class="eyebrow">Delivery queue</p>
+	<h1 class="page-heading">Meeting links past their deadline.</h1>
+	{#if message}<div class="notice notice-warning">{message}</div>{:else if items.length}<div class="list-stack">
+			{#each items as item}<article class="list-card">
+					<div>
+						<strong>{item.seller_name} · {item.seller_handle}</strong>
+						<p>For {item.buyer_name} · starts {new Date(item.starts_at).toLocaleString()}</p>
+						<small>Link due {new Date(item.deadline).toLocaleString()}</small><a
+							class="text-link"
+							href={`/ops/bookings/${encodeURIComponent(item.id)}`}>Open booking ↗</a
+						>
+					</div>
+				</article>{/each}
+		</div>
+		<CursorPager {cursor} busy={loading} onNext={() => load(cursor)} />{:else if !loading}<p class="page-intro">
+			No meeting links are currently overdue.
+		</p>{/if}
+	<div class="notice notice-info">
+		This queue is live. The notification worker sends deadline reminders when an email transport is configured; delivery
+		status is available under system health.
+	</div>
+</section>

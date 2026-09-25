@@ -28,7 +28,11 @@
 		}
 	}
 
-	const what = $derived(audience === 'seller' ? 'new bookings, problem reports and calls about to start' : 'a reminder 10 minutes before your call');
+	const what = $derived(
+		audience === 'seller'
+			? 'new bookings, problem reports and calls about to start'
+			: 'a reminder 10 minutes before your call'
+	);
 </script>
 
 {#if status && status !== 'unsupported' && status !== 'unavailable' && !(hideWhenOn && status === 'on')}
@@ -37,12 +41,24 @@
 			<p><strong>Notifications are on for this device.</strong> You’ll get {what}.</p>
 			<button class="text-link" onclick={() => run(disablePush)} disabled={busy}>Turn off on this device</button>
 		{:else if status === 'off'}
-			<p>{audience === 'seller' ? 'Get a notification on this phone or computer for' : 'Want'} {what}{audience === 'seller' ? '.' : '?'} Emails still come as usual.</p>
-			<button class="button button-secondary" onclick={() => run(enablePush)} disabled={busy}>{busy ? 'Turning on…' : audience === 'seller' ? 'Turn on notifications' : 'Remind me'}</button>
+			<p>
+				{audience === 'seller' ? 'Get a notification on this phone or computer for' : 'Want'}
+				{what}{audience === 'seller' ? '.' : '?'} Emails still come as usual.
+			</p>
+			<button class="button button-secondary" onclick={() => run(enablePush)} disabled={busy}
+				>{busy ? 'Turning on…' : audience === 'seller' ? 'Turn on notifications' : 'Remind me'}</button
+			>
 		{:else if status === 'blocked'}
-			<p>Notifications are blocked for WantMyTime in this browser. To get {what}, allow notifications for this site in your browser settings, then come back.</p>
+			<p>
+				Notifications are blocked for WantMyTime in this browser. To get {what}, allow notifications for this site in
+				your browser settings, then come back.
+			</p>
 		{:else if status === 'install-first'}
-			<p>On iPhone, notifications work once WantMyTime is on your home screen: tap the Share button, choose <strong>Add to Home Screen</strong>, open WantMyTime from there and switch this on.</p>
+			<p>
+				On iPhone, notifications work once WantMyTime is on your home screen: tap the Share button, choose <strong
+					>Add to Home Screen</strong
+				>, open WantMyTime from there and switch this on.
+			</p>
 		{/if}
 		{#if error}<p class="notice notice-warning" role="alert">{error}</p>{/if}
 	</div>

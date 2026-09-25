@@ -1,1 +1,21 @@
-<svelte:head><title>UI components — WantMyTime development</title></svelte:head><section class="article-page"><p class="eyebrow">Development only</p><h1 class="page-heading">A small component gallery.</h1><p class="page-intro">This route is hidden from public navigation. Do not deploy this development route to production.</p><div class="setup-form"><button class="button">Primary action</button><button class="button button-secondary">Secondary action</button><label>Amount<div class="money-input"><span>₦</span><input value="10,000" readonly /></div></label><div class="notice notice-info">Payment received · status examples remain illustrative</div><div class="notice notice-warning">Awaiting approval · no live payment</div><div class="appointment-slip"><div><small>DATE</small><strong>Thursday, 24 September</strong></div><div><small>TIME</small><strong>4:30 PM · Africa/Lagos</strong></div></div></div></section>
+<svelte:head><title>UI components — WantMyTime development</title></svelte:head>
+<section class="article-page">
+	<p class="eyebrow">Development only</p>
+	<h1 class="page-heading">A small component gallery.</h1>
+	<p class="page-intro">
+		This route is hidden from public navigation. Do not deploy this development route to production.
+	</p>
+	<div class="setup-form">
+		<button class="button">Primary action</button><button class="button button-secondary">Secondary action</button
+		><label
+			>Amount
+			<div class="money-input"><span>₦</span><input value="10,000" readonly /></div></label
+		>
+		<div class="notice notice-info">Payment received · status examples remain illustrative</div>
+		<div class="notice notice-warning">Awaiting approval · no live payment</div>
+		<div class="appointment-slip">
+			<div><small>DATE</small><strong>Thursday, 24 September</strong></div>
+			<div><small>TIME</small><strong>4:30 PM · Africa/Lagos</strong></div>
+		</div>
+	</div>
+</section>

@@ -1,2 +1,72 @@
-<script lang="ts">import{onMount}from'svelte';import{api}from'$lib/api';import CursorPager from '$lib/components/CursorPager.svelte';type Person={id:string;name:string;status:string;email:string;created_at:string};let people=$state<Person[]>([]);let message=$state('');let reasons=$state<Record<string,string>>({});let nextCursor=$state('');let loading=$state(false);async function load(cursor=''){loading=true;try{const q=cursor?`?cursor=${encodeURIComponent(cursor)}`:'';const page=await api<{people:Person[];next_cursor:string}>(`/api/v1/ops/people${q}`);people=cursor?[...people,...page.people]:page.people;nextCursor=page.next_cursor}catch(e){message=e instanceof Error?e.message:'People could not be loaded.'}finally{loading=false}}onMount(()=>load());async function action(id:string,kind:'restrict'|'revoke-sessions'){message='';try{await api(`/api/v1/ops/people/${encodeURIComponent(id)}/${kind}`,{method:'POST',body:JSON.stringify({reason:reasons[id]||''})});message=kind==='restrict'?'Account restricted and sessions revoked.':'Account sessions revoked.';await load()}catch(e){message=e instanceof Error?e.message:'Action could not be completed.'}}</script>
-<svelte:head><title>People — Ops · WantMyTime</title></svelte:head><section class="form-page app-page"><a class="back-link" href="/ops">← Operations</a><p class="eyebrow">People</p><h1 class="page-heading">Account directory.</h1>{#if message}<p class="notice notice-info" aria-live="polite">{message}</p>{/if}{#if people.length}<div class="list-stack">{#each people as person}<article class="list-card"><div><strong><a class="text-link" href={`/ops/people/${encodeURIComponent(person.id)}`}>{person.name}</a></strong><p>{person.email} · {person.status}</p><small>{new Date(person.created_at).toLocaleString()}</small>{#if person.status==='active'}<label class="form-note">Reason for an account action<input class="field" bind:value={reasons[person.id]} /></label><div class="ops-nav"><button class="button button-secondary" onclick={()=>action(person.id,'revoke-sessions')}>Revoke sessions</button><button class="button button-secondary" onclick={()=>action(person.id,'restrict')}>Restrict account</button></div>{/if}</div></article>{/each}</div><CursorPager cursor={nextCursor} busy={loading} onNext={()=>load(nextCursor)}/>{:else if !loading&&!message}<p class="page-intro">No accounts yet.</p>{/if}</section>
+<script lang="ts">
+	import { onMount } from 'svelte';
+	import { api } from '$lib/api';
+	import CursorPager from '$lib/components/CursorPager.svelte';
+	type Person = { id: string; name: string; status: string; email: string; created_at: string };
+	let people = $state<Person[]>([]);
+	let message = $state('');
+	let reasons = $state<Record<string, string>>({});
+	let nextCursor = $state('');
+	let loading = $state(false);
+	async function load(cursor = '') {
+		loading = true;
+		try {
+			const q = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
+			const page = await api<{ people: Person[]; next_cursor: string }>(`/api/v1/ops/people${q}`);
+			people = cursor ? [...people, ...page.people] : page.people;
+			nextCursor = page.next_cursor;
+		} catch (e) {
+			message = e instanceof Error ? e.message : 'People could not be loaded.';
+		} finally {
+			loading = false;
+		}
+	}
+	onMount(() => load());
+	async function action(id: string, kind: 'restrict' | 'revoke-sessions') {
+		message = '';
+		try {
+			await api(`/api/v1/ops/people/${encodeURIComponent(id)}/${kind}`, {
+				method: 'POST',
+				body: JSON.stringify({ reason: reasons[id] || '' })
+			});
+			message = kind === 'restrict' ? 'Account restricted and sessions revoked.' : 'Account sessions revoked.';
+			await load();
+		} catch (e) {
+			message = e instanceof Error ? e.message : 'Action could not be completed.';
+		}
+	}
+</script>
+
+<svelte:head><title>People — Ops · WantMyTime</title></svelte:head>
+<section class="form-page app-page">
+	<a class="back-link" href="/ops">← Operations</a>
+	<p class="eyebrow">People</p>
+	<h1 class="page-heading">Account directory.</h1>
+	{#if message}<p class="notice notice-info" aria-live="polite">{message}</p>{/if}{#if people.length}<div
+			class="list-stack"
+		>
+			{#each people as person}<article class="list-card">
+					<div>
+						<strong><a class="text-link" href={`/ops/people/${encodeURIComponent(person.id)}`}>{person.name}</a></strong
+						>
+						<p>{person.email} · {person.status}</p>
+						<small>{new Date(person.created_at).toLocaleString()}</small>{#if person.status === 'active'}<label
+								class="form-note"
+								>Reason for an account action<input class="field" bind:value={reasons[person.id]} /></label
+							>
+							<div class="ops-nav">
+								<button class="button button-secondary" onclick={() => action(person.id, 'revoke-sessions')}
+									>Revoke sessions</button
+								><button class="button button-secondary" onclick={() => action(person.id, 'restrict')}
+									>Restrict account</button
+								>
+							</div>{/if}
+					</div>
+				</article>{/each}
+		</div>
+		<CursorPager cursor={nextCursor} busy={loading} onNext={() => load(nextCursor)} />{:else if !loading && !message}<p
+			class="page-intro"
+		>
+			No accounts yet.
+		</p>{/if}
+</section>

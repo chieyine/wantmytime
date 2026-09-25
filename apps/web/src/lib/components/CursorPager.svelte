@@ -3,5 +3,9 @@
 </script>
 
 {#if cursor}
-	<div class="form-actions"><button class="button button-secondary" type="button" onclick={onNext} disabled={busy}>{busy ? 'Loading…' : 'Load older records'}</button></div>
+	<div class="form-actions">
+		<button class="button button-secondary" type="button" onclick={onNext} disabled={busy}
+			>{busy ? 'Loading…' : 'Load older records'}</button
+		>
+	</div>
 {/if}

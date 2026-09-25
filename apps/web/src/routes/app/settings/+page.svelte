@@ -2,4 +2,24 @@
 	import PushToggle from '$lib/components/PushToggle.svelte';
 </script>
 
-<svelte:head><title>Settings — WantMyTime</title></svelte:head><section class="form-page app-page"><a class="back-link" href="/app">← Overview</a><p class="eyebrow">Settings</p><h1 class="page-heading">Account and access.</h1><div class="setting-links"><a href="/app/settings/payouts"><span>Payouts</span><b>Where your money is paid ↗</b></a><a href="/app/settings/security"><span>Active sessions</span><b>View and revoke ↗</b></a><a href="/app/settings/cancellation"><span>Cancellation policy</span><b>Refund rules for buyers ↗</b></a><a href="/app/settings/connections"><span>Calendar and meetings</span><b>Google Calendar and Meet ↗</b></a><a href="/app/settings/data"><span>Your data</span><b>Download or delete your account ↗</b></a></div><section class="settings-block"><h2>Notifications</h2><PushToggle audience="seller" /></section><div class="notice notice-info">Add a payout account under Payouts before taking paid bookings. WantMyTime pays you after each session, once the buyer’s time to report a problem has passed.</div></section>
+<svelte:head><title>Settings — WantMyTime</title></svelte:head>
+<section class="form-page app-page">
+	<a class="back-link" href="/app">← Overview</a>
+	<p class="eyebrow">Settings</p>
+	<h1 class="page-heading">Account and access.</h1>
+	<div class="setting-links">
+		<a href="/app/settings/payouts"><span>Payouts</span><b>Where your money is paid ↗</b></a><a
+			href="/app/settings/security"><span>Active sessions</span><b>View and revoke ↗</b></a
+		><a href="/app/settings/cancellation"><span>Cancellation policy</span><b>Refund rules for buyers ↗</b></a><a
+			href="/app/settings/connections"><span>Calendar and meetings</span><b>Google Calendar and Meet ↗</b></a
+		><a href="/app/settings/data"><span>Your data</span><b>Download or delete your account ↗</b></a>
+	</div>
+	<section class="settings-block">
+		<h2>Notifications</h2>
+		<PushToggle audience="seller" />
+	</section>
+	<div class="notice notice-info">
+		Add a payout account under Payouts before taking paid bookings. WantMyTime pays you after each session, once the
+		buyer’s time to report a problem has passed.
+	</div>
+</section>

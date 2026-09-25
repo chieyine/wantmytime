@@ -6,9 +6,14 @@
 	let person = $derived(data.person);
 	let publicUrl = $derived(`${data.publicOrigin.replace(/\/$/, '')}/${person.handle}`);
 	let firstName = $derived(person.name.split(' ')[0]);
-	let previewUrl = $derived(`${data.publicOrigin.replace(/\/$/, '')}/og/${encodeURIComponent(person.handle)}/${person.preview_version}.png`);
-	onMount(()=>{void recordProductEvent('public_link_viewed',person.handle)});
+	let previewUrl = $derived(
+		`${data.publicOrigin.replace(/\/$/, '')}/og/${encodeURIComponent(person.handle)}/${person.preview_version}.png`
+	);
+	onMount(() => {
+		void recordProductEvent('public_link_viewed', person.handle);
+	});
 </script>
+
 <svelte:head>
 	<title>{person.name} — WantMyTime</title>
 	<meta name="description" content={`A little time with ${person.name}.`} />

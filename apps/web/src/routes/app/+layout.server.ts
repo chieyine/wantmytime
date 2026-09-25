@@ -7,7 +7,9 @@ export const load: LayoutServerLoad = async ({ cookies, fetch, url }) => {
 	if (!session) redirect(303, `/login?next=${encodeURIComponent(url.pathname + url.search)}`);
 	const apiBase = env.API_INTERNAL_BASE || 'http://127.0.0.1:8081';
 	try {
-		const response = await fetch(`${apiBase}/api/v1/me`, { headers: { cookie: `aside_session=${encodeURIComponent(session)}` } });
+		const response = await fetch(`${apiBase}/api/v1/me`, {
+			headers: { cookie: `aside_session=${encodeURIComponent(session)}` }
+		});
 		if (response.ok) return { account: await response.json() };
 	} catch {
 		// Fail closed if the identity service is unavailable.

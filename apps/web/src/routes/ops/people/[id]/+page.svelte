@@ -2,33 +2,104 @@
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
 	let { params } = $props();
-	type Person = { id: string; name: string; status: string; email: string | null; created_at: string; seller: { handle: string; publication_state: string; readiness_state: string; paused: boolean; payout_account_added: boolean } | null };
+	type Person = {
+		id: string;
+		name: string;
+		status: string;
+		email: string | null;
+		created_at: string;
+		seller: {
+			handle: string;
+			publication_state: string;
+			readiness_state: string;
+			paused: boolean;
+			payout_account_added: boolean;
+		} | null;
+	};
 	let person = $state<Person | null>(null);
 	let message = $state('');
 	let actionMessage = $state('');
 	let reason = $state('');
 	let busy = $state(false);
 	async function load() {
-		try { person = await api<Person>(`/api/v1/ops/people/${encodeURIComponent(params.id)}`); }
-		catch (e) { message = e instanceof Error ? e.message : 'Account could not be loaded.'; }
+		try {
+			person = await api<Person>(`/api/v1/ops/people/${encodeURIComponent(params.id)}`);
+		} catch (e) {
+			message = e instanceof Error ? e.message : 'Account could not be loaded.';
+		}
 	}
 	onMount(load);
 	async function setReadiness(ready: boolean) {
-		busy = true; actionMessage = '';
+		busy = true;
+		actionMessage = '';
 		try {
-			await api(`/api/v1/ops/people/${encodeURIComponent(params.id)}/payout-readiness`, { method: 'POST', body: JSON.stringify({ ready, reason }) });
-			actionMessage = ready ? 'Hold lifted: the seller is open for bookings again. The change is audited.' : 'Seller put on hold: no new bookings. The change is audited.';
+			await api(`/api/v1/ops/people/${encodeURIComponent(params.id)}/payout-readiness`, {
+				method: 'POST',
+				body: JSON.stringify({ ready, reason })
+			});
+			actionMessage = ready
+				? 'Hold lifted: the seller is open for bookings again. The change is audited.'
+				: 'Seller put on hold: no new bookings. The change is audited.';
 			reason = '';
 			await load();
 		} catch (e) {
 			actionMessage = e instanceof Error ? e.message : 'Payout readiness could not be updated.';
-		} finally { busy = false; }
+		} finally {
+			busy = false;
+		}
 	}
 </script>
+
 <svelte:head><title>Person detail — Ops · WantMyTime</title></svelte:head>
-<section class="form-page app-page"><a class="back-link" href="/ops/people">← People</a><p class="eyebrow">Account record</p>
-{#if person}<h1 class="page-heading">{person.name}</h1><div class="list-stack"><article class="list-card"><div><strong>Account</strong><p>{person.email || 'No verified email'} · {person.status}</p><small>Created {new Date(person.created_at).toLocaleString()}</small></div></article>
-{#if person.seller}<article class="list-card"><div><strong>Personal link</strong><p>@{person.seller.handle} · {person.seller.publication_state}</p><small>Readiness: {person.seller.readiness_state} · {person.seller.paused ? 'Paused' : 'Taking bookings'} · Bank account {person.seller.payout_account_added ? 'added' : 'not added yet'}</small></div></article>
-<section class="readiness-panel"><h2>Bookings on or off</h2><p>Sellers open for bookings on their own once they save a payout account. Put a seller on hold to stop new bookings (existing ones stay); only an operator can lift a hold. Requires the <code>ops:seller:approve</code> permission.</p><div class="setup-form"><label>Reason (kept in the audit log)<textarea class="field" rows="3" maxlength="300" bind:value={reason}></textarea></label><div class="ops-nav"><button class="button" onclick={() => setReadiness(true)} disabled={busy || reason.trim().length < 8}>Lift hold: open for bookings</button><button class="button button-secondary" onclick={() => setReadiness(false)} disabled={busy || reason.trim().length < 8}>Put on hold</button></div>{#if actionMessage}<p class="notice notice-info" aria-live="polite">{actionMessage}</p>{/if}</div></section>
-{:else}<p class="page-intro">This account has not claimed a seller link.</p>{/if}</div>
-{:else if message}<div class="notice notice-warning" role="status">{message}</div>{:else}<p class="page-intro">Loading account…</p>{/if}</section>
+<section class="form-page app-page">
+	<a class="back-link" href="/ops/people">← People</a>
+	<p class="eyebrow">Account record</p>
+	{#if person}<h1 class="page-heading">{person.name}</h1>
+		<div class="list-stack">
+			<article class="list-card">
+				<div>
+					<strong>Account</strong>
+					<p>{person.email || 'No verified email'} · {person.status}</p>
+					<small>Created {new Date(person.created_at).toLocaleString()}</small>
+				</div>
+			</article>
+			{#if person.seller}<article class="list-card">
+					<div>
+						<strong>Personal link</strong>
+						<p>@{person.seller.handle} · {person.seller.publication_state}</p>
+						<small
+							>Readiness: {person.seller.readiness_state} · {person.seller.paused ? 'Paused' : 'Taking bookings'} · Bank account
+							{person.seller.payout_account_added ? 'added' : 'not added yet'}</small
+						>
+					</div>
+				</article>
+				<section class="readiness-panel">
+					<h2>Bookings on or off</h2>
+					<p>
+						Sellers open for bookings on their own once they save a payout account. Put a seller on hold to stop new
+						bookings (existing ones stay); only an operator can lift a hold. Requires the <code>ops:seller:approve</code
+						> permission.
+					</p>
+					<div class="setup-form">
+						<label
+							>Reason (kept in the audit log)<textarea class="field" rows="3" maxlength="300" bind:value={reason}
+							></textarea></label
+						>
+						<div class="ops-nav">
+							<button class="button" onclick={() => setReadiness(true)} disabled={busy || reason.trim().length < 8}
+								>Lift hold: open for bookings</button
+							><button
+								class="button button-secondary"
+								onclick={() => setReadiness(false)}
+								disabled={busy || reason.trim().length < 8}>Put on hold</button
+							>
+						</div>
+						{#if actionMessage}<p class="notice notice-info" aria-live="polite">{actionMessage}</p>{/if}
+					</div>
+				</section>
+			{:else}<p class="page-intro">This account has not claimed a seller link.</p>{/if}
+		</div>
+	{:else if message}<div class="notice notice-warning" role="status">{message}</div>{:else}<p class="page-intro">
+			Loading account…
+		</p>{/if}
+</section>

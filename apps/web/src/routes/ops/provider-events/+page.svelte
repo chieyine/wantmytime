@@ -1,10 +1,90 @@
 <script lang="ts">
-	import { onMount } from 'svelte';import { api } from '$lib/api';import CursorPager from '$lib/components/CursorPager.svelte';
-	type Event={id:string;event_type:string;reference:string;state:string;attempts:number;last_error_code:string|null;received_at:string};
-	let events=$state<Event[]>([]);let reasons=$state<Record<string,string>>({});let message=$state('');let busy=$state('');let loading=$state(true);let nextCursor=$state('');
-	async function load(cursor=''){loading=true;try{const q=cursor?`?cursor=${encodeURIComponent(cursor)}`:'';const page=await api<{events:Event[];next_cursor:string}>(`/api/v1/ops/provider-events${q}`);events=cursor?[...events,...page.events]:page.events;nextCursor=page.next_cursor}catch(e){message=e instanceof Error?e.message:'Provider events could not be loaded.'}finally{loading=false}}
+	import { onMount } from 'svelte';
+	import { api } from '$lib/api';
+	import CursorPager from '$lib/components/CursorPager.svelte';
+	type Event = {
+		id: string;
+		event_type: string;
+		reference: string;
+		state: string;
+		attempts: number;
+		last_error_code: string | null;
+		received_at: string;
+	};
+	let events = $state<Event[]>([]);
+	let reasons = $state<Record<string, string>>({});
+	let message = $state('');
+	let busy = $state('');
+	let loading = $state(true);
+	let nextCursor = $state('');
+	async function load(cursor = '') {
+		loading = true;
+		try {
+			const q = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
+			const page = await api<{ events: Event[]; next_cursor: string }>(`/api/v1/ops/provider-events${q}`);
+			events = cursor ? [...events, ...page.events] : page.events;
+			nextCursor = page.next_cursor;
+		} catch (e) {
+			message = e instanceof Error ? e.message : 'Provider events could not be loaded.';
+		} finally {
+			loading = false;
+		}
+	}
 	onMount(load);
-	async function retry(id:string){busy=id;message='';try{await api(`/api/v1/ops/provider-events/${encodeURIComponent(id)}/retry`,{method:'POST',body:JSON.stringify({reason:reasons[id]||''})});reasons={...reasons,[id]:''};message='Provider event queued for a fresh verification attempt. The provider still decides payment status.';await load()}catch(e){message=e instanceof Error?e.message:'Provider event could not be retried.'}finally{busy=''}}
+	async function retry(id: string) {
+		busy = id;
+		message = '';
+		try {
+			await api(`/api/v1/ops/provider-events/${encodeURIComponent(id)}/retry`, {
+				method: 'POST',
+				body: JSON.stringify({ reason: reasons[id] || '' })
+			});
+			reasons = { ...reasons, [id]: '' };
+			message = 'Provider event queued for a fresh verification attempt. The provider still decides payment status.';
+			await load();
+		} catch (e) {
+			message = e instanceof Error ? e.message : 'Provider event could not be retried.';
+		} finally {
+			busy = '';
+		}
+	}
 </script>
+
 <svelte:head><title>Provider events — Ops · WantMyTime</title></svelte:head>
-<section class="form-page app-page"><a class="back-link" href="/ops/system">← System health</a><p class="eyebrow">Provider event inbox</p><h1 class="page-heading">Signed events, verified again.</h1><p class="page-intro">Webhook bodies are minimized. Every retry calls Kora verification; it does not trust the callback or mark a booking paid by itself.</p>{#if message}<p class="notice notice-info" aria-live="polite">{message}</p>{/if}{#if loading&&!events.length}<p>Loading provider events…</p>{:else if events.length}<div class="list-stack">{#each events as item}<article class="list-card"><div><strong>{item.event_type||'Provider event'} · {item.state}</strong><p>Reference: {item.reference||'Unavailable'}</p><small>{new Date(item.received_at).toLocaleString()} · {item.attempts} attempts{item.last_error_code?` · ${item.last_error_code}`:''}</small>{#if item.state==='failed'}<label>Audited retry reason<textarea class="field" rows="2" maxlength="500" bind:value={reasons[item.id]}></textarea></label><button class="button button-secondary" onclick={()=>retry(item.id)} disabled={busy!==''||(reasons[item.id]||'').trim().length<8}>{busy===item.id?'Queueing…':'Retry verification'}</button>{/if}</div></article>{/each}</div><CursorPager cursor={nextCursor} busy={loading} onNext={()=>load(nextCursor)}/>{:else if !loading}<p class="page-intro">No provider events have been received.</p>{/if}</section>
+<section class="form-page app-page">
+	<a class="back-link" href="/ops/system">← System health</a>
+	<p class="eyebrow">Provider event inbox</p>
+	<h1 class="page-heading">Signed events, verified again.</h1>
+	<p class="page-intro">
+		Webhook bodies are minimized. Every retry calls Kora verification; it does not trust the callback or mark a booking
+		paid by itself.
+	</p>
+	{#if message}<p class="notice notice-info" aria-live="polite">{message}</p>{/if}{#if loading && !events.length}<p>
+			Loading provider events…
+		</p>{:else if events.length}<div class="list-stack">
+			{#each events as item}<article class="list-card">
+					<div>
+						<strong>{item.event_type || 'Provider event'} · {item.state}</strong>
+						<p>Reference: {item.reference || 'Unavailable'}</p>
+						<small
+							>{new Date(item.received_at).toLocaleString()} · {item.attempts} attempts{item.last_error_code
+								? ` · ${item.last_error_code}`
+								: ''}</small
+						>{#if item.state === 'failed'}<label
+								>Audited retry reason<textarea class="field" rows="2" maxlength="500" bind:value={reasons[item.id]}
+								></textarea></label
+							><button
+								class="button button-secondary"
+								onclick={() => retry(item.id)}
+								disabled={busy !== '' || (reasons[item.id] || '').trim().length < 8}
+								>{busy === item.id ? 'Queueing…' : 'Retry verification'}</button
+							>{/if}
+					</div>
+				</article>{/each}
+		</div>
+		<CursorPager cursor={nextCursor} busy={loading} onNext={() => load(nextCursor)} />{:else if !loading}<p
+			class="page-intro"
+		>
+			No provider events have been received.
+		</p>{/if}
+</section>
