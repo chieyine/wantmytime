@@ -64,6 +64,12 @@
 			which features are used, using only anonymous events.
 		</li>
 		<li><b>With your consent</b>: connecting Google Calendar. You can disconnect at any time.</li>
+		<li>
+			<b>With your consent</b>: news and offers from WantMyTime and our company, Kredit Technologies, including
+			kredit.ng. We ask when you sign up, book or make an offer. Untick the box to say no, and unsubscribe any time with
+			the link in every email or under Settings. We keep a record of when you agreed and the wording you saw. Saying no
+			never affects your bookings, and booking emails keep coming either way.
+		</li>
 	</ul>
 	<p>We do not sell personal data, show advertising, or use your data to train AI models.</p>
 
@@ -72,7 +78,10 @@
 	<ul>
 		<li><b>Kora</b> (payments and payouts; Nigeria, and the other African countries where sellers are paid).</li>
 		<li><b>Cloudflare</b> (hosting of profile photos and protection of the site).</li>
-		<li><b>Our email provider</b> (sign-in codes and booking emails).</li>
+		<li>
+			<b>Our email provider</b> (sign-in codes, booking emails and, if you agreed to them, news emails). If we use a separate
+			mailing service for news, it gets only your name and email and each person’s unsubscribe link.
+		</li>
 		<li><b>Google</b>, only if you connect Google Calendar.</li>
 		<li>
 			<b>Your browser’s notification service</b> (Google, Apple, Mozilla or Microsoft, depending on your device), only if

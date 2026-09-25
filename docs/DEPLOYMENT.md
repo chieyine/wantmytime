@@ -68,3 +68,12 @@ Other new settings: `AUTO_MEETING_LINKS` (default on) and `MEETING_LINK_BASE` (d
 ## Phone and browser notifications
 
 Run `aside-api vapid-keys` once and put the two lines it prints (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`) in the secret manager; optionally set `VAPID_SUBJECT` (default `mailto:support@wantmytime.com`). Keep the keys for good: new keys switch notifications off on every device until people turn them on again. Without keys the API starts normally with notifications off and the switches are hidden. Notifications need HTTPS (they work on `localhost` for development). The web app serves `/push-sw.js` (the notification worker), `/manifest.webmanifest` and the app icons; the gateway must pass them through unchanged. Outbound HTTPS from the API must reach the browsers' push services (`fcm.googleapis.com`, `*.push.services.mozilla.com`, `*.push.apple.com`, `*.notify.windows.com`).
+
+## Announcement email
+
+Migration `027_marketing_email.sql` adds consent records and announcements. People are asked, with a pre-ticked box, when they sign up, book or make an offer, and can change their mind under Settings or with the link in every email. Only addresses that agreed *and* are confirmed (a sign-in code, or a paid booking made with them) are ever emailed or exported.
+
+- Send from the ops panel under **Announcements** (needs the `ops:marketing:send` permission; run `aside-api bootstrap-admin <email>` again for an existing operator to add it, with the same `OPS_BOOTSTRAP_TOTP_SECRET` so their authenticator keeps working). Write a draft, send yourself a test, then confirm the number of people. It goes out `MARKETING_SEND_PER_MINUTE` at a time (default 60) and skips anyone who unsubscribed meanwhile.
+- Or download the list as CSV for Brevo, Mailchimp or similar. Each row carries that person's own unsubscribe link; paste the tool's unsubscribes back into the same page before the next send.
+- Every announcement has `List-Unsubscribe` and one-click (`List-Unsubscribe-Post`) headers, which Gmail and Yahoo require for bulk senders.
+- Set `EMAIL_MARKETING_FROM` to a sender on a separate subdomain (for example `WantMyTime <news@news.wantmytime.com>`) verified with SPF and DKIM, so news never affects delivery of booking emails.

@@ -2,6 +2,8 @@
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
 	import { recordProductEvent } from '$lib/analytics';
+	import MarketingConsent from '$lib/components/MarketingConsent.svelte';
+	import { saveMarketingChoice } from '$lib/marketing';
 	import { formatMoney, priceForDuration, methodLabels } from '$lib/money';
 	import { page } from '$app/state';
 	import { viewerTimeZone, todayIn, sameClock, clockIn, zoneCity, timeOnly, nextDay } from '$lib/time';
@@ -45,6 +47,7 @@
 	let chosenSlot = $derived(slots.find((slot) => slot.starts_at === selected));
 	let payWith = $derived((person?.payment_methods ?? []).map((m) => (methodLabels[m] ?? m).toLowerCase()).join(' or '));
 
+	let marketing = $state(true);
 	onMount(async () => {
 		try {
 			person = await api<Person>(`/api/v1/people/${encodeURIComponent(seller)}`);
@@ -108,6 +111,8 @@
 		try {
 			// No code first: open a booking-only session for this email, hold the time, go to payment.
 			await api('/api/v1/bookings/start', { method: 'POST', body: JSON.stringify({ email: email.trim() }) });
+			// Counted only once the booking is paid; never blocks the booking.
+			await saveMarketingChoice(marketing, 'booking').catch(() => undefined);
 			const quote = await api<{ id: string }>('/api/v1/quotes', {
 				method: 'POST',
 				headers: { 'Idempotency-Key': crypto.randomUUID() },
@@ -208,6 +213,7 @@
 								placeholder="you@example.com"
 							/>
 						</div>
+						<MarketingConsent bind:checked={marketing} />
 					</section>
 					{#if message && slots.length > 0}<p class="booking-error" role="alert">{message}</p>{/if}
 					<button

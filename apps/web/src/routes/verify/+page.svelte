@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { api } from '$lib/api';
 	import { viewerTimeZone } from '$lib/time';
+	import { saveMarketingChoice } from '$lib/marketing';
 	let code = $state('');
 	let message = $state('');
 	let busy = $state(false);
@@ -47,6 +48,7 @@
 					name: string;
 					amount_minor: number;
 					idempotency_key: string;
+					marketing?: boolean;
 				};
 				const offer = await api<{ id: string }>('/api/v1/offers', {
 					method: 'POST',
@@ -58,6 +60,9 @@
 						amount_minor: draft.amount_minor
 					})
 				});
+				// Never let the email preference stop the offer going through.
+				if (typeof draft.marketing === 'boolean')
+					await saveMarketingChoice(draft.marketing, 'offer').catch(() => undefined);
 				sessionStorage.removeItem('aside_offer_draft');
 				window.location.href = `/offer/${encodeURIComponent(offer.id)}`;
 			} else if (purpose === 'access') {
@@ -78,6 +83,7 @@
 					durations: number[];
 					timezone: string;
 					country?: string;
+					marketing?: boolean;
 				};
 				const profile = {
 					handle: draft.handle,
@@ -90,6 +96,8 @@
 					country: draft.country ?? ''
 				};
 				await api('/api/v1/me/link', { method: 'POST', body: JSON.stringify(profile) });
+				if (typeof draft.marketing === 'boolean')
+					await saveMarketingChoice(draft.marketing, 'seller_signup').catch(() => undefined);
 				sessionStorage.removeItem('aside_claim_draft');
 				window.location.href = '/app/onboarding';
 			} else {

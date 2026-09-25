@@ -3,6 +3,7 @@
 	import { api } from '$lib/api';
 	import { page } from '$app/state';
 	import { currencySymbol, formatMoney, parseMoneyToMinor } from '$lib/money';
+	import MarketingConsent from '$lib/components/MarketingConsent.svelte';
 	let seller = $derived((page.url.searchParams.get('seller') ?? '').trim().toLowerCase());
 	type Person = {
 		handle: string;
@@ -20,6 +21,7 @@
 	let email = $state('');
 	let message = $state('');
 	let loading = $state(true);
+	let marketing = $state(true);
 	let busy = $state(false);
 	const currency = $derived(person?.currency || 'NGN');
 	onMount(async () => {
@@ -60,7 +62,8 @@
 					duration,
 					name: buyerName.trim(),
 					amount_minor: Number(parsed),
-					idempotency_key: crypto.randomUUID()
+					idempotency_key: crypto.randomUUID(),
+					marketing
 				})
 			);
 			window.location.href = `/verify?purpose=offer&challenge=${encodeURIComponent(challenge.challenge_id)}`;
@@ -118,6 +121,7 @@
 				></label
 			>
 			{#if message}<p class="notice notice-warning" aria-live="polite">{message}</p>{/if}
+			<MarketingConsent bind:checked={marketing} />
 			<button class="button" type="submit" disabled={busy}
 				>{busy ? 'Sending code…' : 'Confirm email and send offer'} <span>↗</span></button
 			>

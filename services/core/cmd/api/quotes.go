@@ -553,6 +553,10 @@ func (a *API) simulatePayment(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "BOOKING_ERROR", "The booking could not be confirmed.")
 		return
 	}
+	if err = confirmMarketingEmail(r.Context(), tx, email); err != nil {
+		problem(w, 503, "BOOKING_ERROR", "The booking could not be confirmed.")
+		return
+	}
 	_, err = tx.Exec(r.Context(), `INSERT INTO payment_attempts(id,booking_id,provider,environment,merchant_reference,expected_minor,currency,canonical_state) SELECT gen_random_uuid(),$1,'local_simulator','local',$2,$3,q.currency,'simulated' FROM quotes q WHERE q.id=$4`, bookingID, "sim_"+id, amount, id)
 	if err != nil {
 		problem(w, 503, "BOOKING_ERROR", "The local payment record could not be saved.")

@@ -238,6 +238,11 @@ func (a *API) verifyChallenge(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "DATABASE_ERROR", "Verification could not be completed.")
 		return
 	}
+	// A sign-in code proves the address, so an earlier yes to announcements now counts.
+	if e = confirmMarketingEmail(r.Context(), tx, email); e != nil {
+		problem(w, 503, "DATABASE_ERROR", "Verification could not be completed.")
+		return
+	}
 	if zone, zoneErr := loadNamedTimezone(strings.TrimSpace(in.Timezone)); zoneErr == nil {
 		if _, e = tx.Exec(r.Context(), `UPDATE users SET timezone=$2 WHERE id=$1 AND timezone IS DISTINCT FROM $2`, userID, zone.String()); e != nil {
 			problem(w, 503, "ACCOUNT_ERROR", "Account could not be updated.")

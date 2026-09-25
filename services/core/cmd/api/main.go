@@ -154,6 +154,7 @@ func main() {
 	addr := envOr("API_ADDR", "127.0.0.1:8081")
 	if a.emailConfigured() {
 		go a.runNotificationWorker(ctx)
+		go a.runBroadcastWorker(ctx)
 	}
 	if a.googleCalendarConfigured() {
 		go a.runCalendarWorker(ctx)
@@ -210,7 +211,7 @@ func bootstrapAdmin(ctx context.Context, db *pgxpool.Pool, email, encodedSecret 
 	if err = tx.QueryRow(ctx, `SELECT u.id::text FROM users u JOIN user_identities i ON i.user_id=u.id WHERE i.type='email' AND i.normalized_identifier=$1 AND i.verified_at IS NOT NULL AND u.status='active'`, email).Scan(&userID); err != nil {
 		return fmt.Errorf("email must belong to an existing verified active account")
 	}
-	for _, permission := range []string{"ops:read", "ops:account:restrict", "ops:session:revoke", "ops:booking:resolve", "ops:settlement:import", "ops:seller:approve", "ops:refund:approve"} {
+	for _, permission := range []string{"ops:read", "ops:account:restrict", "ops:session:revoke", "ops:booking:resolve", "ops:settlement:import", "ops:seller:approve", "ops:refund:approve", "ops:marketing:send"} {
 		if _, err = tx.Exec(ctx, `INSERT INTO admin_grants(id,user_id,permission,granted_by) VALUES(gen_random_uuid(),$1,$2,$1) ON CONFLICT DO NOTHING`, userID, permission); err != nil {
 			return err
 		}
@@ -218,7 +219,7 @@ func bootstrapAdmin(ctx context.Context, db *pgxpool.Pool, email, encodedSecret 
 	if _, err = tx.Exec(ctx, `INSERT INTO admin_mfa(user_id,encrypted_secret) VALUES($1,$2) ON CONFLICT(user_id) DO UPDATE SET encrypted_secret=EXCLUDED.encrypted_secret,updated_at=now()`, userID, encrypted); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO audit_events(id,actor_id,action,target_id,safe_summary) VALUES(gen_random_uuid(),$1,'admin.bootstrap',$1,jsonb_build_object('permissions',ARRAY['ops:read','ops:account:restrict','ops:session:revoke','ops:booking:resolve','ops:settlement:import','ops:seller:approve','ops:refund:approve']))`, userID); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO audit_events(id,actor_id,action,target_id,safe_summary) VALUES(gen_random_uuid(),$1,'admin.bootstrap',$1,jsonb_build_object('permissions',ARRAY['ops:read','ops:account:restrict','ops:session:revoke','ops:booking:resolve','ops:settlement:import','ops:seller:approve','ops:refund:approve','ops:marketing:send']))`, userID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

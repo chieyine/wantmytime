@@ -93,6 +93,19 @@ func (a *API) routes() http.Handler {
 	handle("POST /api/v1/webhooks/kora", a.koraWebhook)
 	handle("POST /api/v1/ops/session", a.opsSession)
 	handle("GET /api/v1/ops/overview", a.opsOverview)
+	handle("GET /api/v1/ops/marketing", a.opsMarketingSummary)
+	handle("GET /api/v1/ops/marketing/contacts.csv", a.opsMarketingExport)
+	handle("POST /api/v1/ops/marketing/unsubscribes", a.opsMarketingImportUnsubscribes)
+	handle("POST /api/v1/ops/broadcasts", a.opsCreateBroadcast)
+	handle("POST /api/v1/ops/broadcasts/{id}/test", a.opsTestBroadcast)
+	handle("POST /api/v1/ops/broadcasts/{id}/send", a.opsSendBroadcast)
+	handle("POST /api/v1/ops/broadcasts/{id}/cancel", a.opsCancelBroadcast)
+	handle("GET /api/v1/me/marketing", a.myMarketing)
+	handle("PUT /api/v1/me/marketing", a.setMyMarketing)
+	handle("GET /api/v1/marketing/unsubscribe", a.rateLimited(publicLimit, a.marketingByToken))
+	handle("POST /api/v1/marketing/unsubscribe", a.rateLimited(publicLimit, a.setMarketingByToken(false)))
+	handle("POST /api/v1/marketing/one-click", a.rateLimited(publicLimit, a.setMarketingByToken(false)))
+	handle("POST /api/v1/marketing/resubscribe", a.rateLimited(publicLimit, a.setMarketingByToken(true)))
 	handle("GET /api/v1/ops/growth", a.opsGrowth)
 	handle("GET /api/v1/ops/funnels", a.opsFunnels)
 	handle("GET /api/v1/ops/system", a.opsSystem)
@@ -200,7 +213,9 @@ func (a *API) cors(next http.Handler) http.Handler {
 			w.WriteHeader(204)
 			return
 		}
-		providerWebhook := r.Method == http.MethodPost && r.URL.Path == "/api/v1/webhooks/kora"
+		// Mail providers post one-click unsubscribes (RFC 8058) from their servers,
+		// without an Origin; the secret token in the link is the authorization.
+		providerWebhook := r.Method == http.MethodPost && (r.URL.Path == "/api/v1/webhooks/kora" || r.URL.Path == "/api/v1/marketing/one-click")
 		if r.Method != http.MethodGet && r.Method != http.MethodHead && origin == "" && !providerWebhook {
 			problem(w, 403, "ORIGIN_REQUIRED", "A same-origin request is required.")
 			return

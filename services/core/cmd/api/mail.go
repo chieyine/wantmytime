@@ -30,6 +30,11 @@ type emailMessage struct {
 	// IdempotencyKey lets the provider drop a repeat of the same logical email
 	// (for example when a worker retries after a timeout that actually sent).
 	IdempotencyKey string
+	// Headers are extra message headers, such as List-Unsubscribe on
+	// announcements. Names and values must be single-line.
+	Headers map[string]string
+	// From overrides EMAIL_FROM (announcements can use their own sender).
+	From string
 }
 
 type emailAttachment struct {
@@ -54,6 +59,9 @@ type emailContent struct {
 	Action     *emailLink
 	Notes      []string
 	Calendar   *calendarEvent
+	// Footer replaces the transactional footer; Unsubscribe adds a link to it.
+	Footer      string
+	Unsubscribe *emailLink
 }
 
 func (c emailContent) message(to, idempotencyKey string) emailMessage {
@@ -95,7 +103,14 @@ func renderEmail(c emailContent) (string, string) {
 	for _, n := range c.Notes {
 		t.WriteString(n + "\n\n")
 	}
-	t.WriteString("WantMyTime\n" + emailFooter() + "\n")
+	footer := emailFooter()
+	if c.Footer != "" {
+		footer = c.Footer
+	}
+	t.WriteString("WantMyTime\n" + footer + "\n")
+	if c.Unsubscribe != nil {
+		t.WriteString(c.Unsubscribe.Label + ": " + c.Unsubscribe.URL + "\n")
+	}
 
 	e := html.EscapeString
 	var h strings.Builder
@@ -126,7 +141,11 @@ func renderEmail(c emailContent) (string, string) {
 	for _, n := range c.Notes {
 		h.WriteString(`<p style="margin:0 0 12px;font-size:14px;line-height:1.55;color:#3d403b;">` + e(n) + `</p>`)
 	}
-	h.WriteString(`</td></tr><tr><td style="padding:16px 4px;font-size:12px;line-height:1.5;color:#5b5f58;">` + e(emailFooter()) + `</td></tr>`)
+	h.WriteString(`</td></tr><tr><td style="padding:16px 4px;font-size:12px;line-height:1.5;color:#5b5f58;">` + e(footer))
+	if c.Unsubscribe != nil {
+		h.WriteString(` <a href="` + e(c.Unsubscribe.URL) + `" style="color:#5b5f58;">` + e(c.Unsubscribe.Label) + `</a>`)
+	}
+	h.WriteString(`</td></tr>`)
 	h.WriteString(`</table></td></tr></table></body></html>`)
 	return t.String(), h.String()
 }
@@ -225,6 +244,9 @@ func (a *API) deliverEmail(ctx context.Context, msg emailMessage) bool {
 	}
 	if host := os.Getenv("SMTP_HOST"); host != "" && a.env != "production" {
 		from := envOr("EMAIL_FROM", "WantMyTime <local@wantmytime.com>")
+		if msg.From != "" {
+			from = msg.From
+		}
 		raw, err := buildMIME(from, os.Getenv("EMAIL_REPLY_TO"), msg)
 		if err != nil {
 			return false
@@ -240,6 +262,9 @@ func (a *API) deliverEmail(ctx context.Context, msg emailMessage) bool {
 
 func (a *API) sendResend(ctx context.Context, msg emailMessage) bool {
 	key, from := os.Getenv("EMAIL_API_KEY"), os.Getenv("EMAIL_FROM")
+	if msg.From != "" {
+		from = msg.From
+	}
 	if key == "" || from == "" || strings.ContainsAny(from, "\r\n") {
 		return false
 	}
@@ -249,6 +274,9 @@ func (a *API) sendResend(ctx context.Context, msg emailMessage) bool {
 	}
 	if replyTo := strings.TrimSpace(os.Getenv("EMAIL_REPLY_TO")); replyTo != "" && validEmail(replyTo) {
 		payload["reply_to"] = replyTo
+	}
+	if len(msg.Headers) > 0 {
+		payload["headers"] = msg.Headers
 	}
 	if len(msg.Attachments) > 0 {
 		items := []map[string]string{}
@@ -305,6 +333,12 @@ func buildMIME(from, replyTo string, msg emailMessage) ([]byte, error) {
 	}
 	if replyTo != "" {
 		headers = append(headers, "Reply-To: "+replyTo)
+	}
+	for name, value := range msg.Headers {
+		if name == "" || strings.ContainsAny(name, "\r\n: ") || strings.ContainsAny(value, "\r\n") {
+			return nil, fmt.Errorf("invalid header")
+		}
+		headers = append(headers, name+": "+value)
 	}
 	var head bytes.Buffer
 	head.WriteString(strings.Join(headers, "\r\n") + "\r\n\r\n")

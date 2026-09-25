@@ -343,7 +343,7 @@ func (h *harness) operator() (*client, []byte) {
 		h.t.Fatal(err)
 	}
 	userID := scalar[string](h.t, `SELECT user_id::text FROM user_identities WHERE normalized_identifier=$1`, c.email)
-	for _, permission := range []string{"ops:read", "ops:account:restrict", "ops:session:revoke", "ops:booking:resolve", "ops:settlement:import", "ops:seller:approve", "ops:refund:approve"} {
+	for _, permission := range []string{"ops:read", "ops:account:restrict", "ops:session:revoke", "ops:booking:resolve", "ops:settlement:import", "ops:seller:approve", "ops:refund:approve", "ops:marketing:send"} {
 		if _, err = itPool.Exec(context.Background(), `INSERT INTO admin_grants(id,user_id,permission,granted_by) VALUES(gen_random_uuid(),$1,$2,$1)`, userID, permission); err != nil {
 			h.t.Fatal(err)
 		}

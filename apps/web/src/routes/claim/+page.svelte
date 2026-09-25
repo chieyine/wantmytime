@@ -4,6 +4,7 @@
 	import { browserZone } from '$lib/timezones';
 	import { currencySymbol, parseMoneyToMinor } from '$lib/money';
 	import { handlePattern, suggestHandle, validHandle } from '$lib/handle';
+	import MarketingConsent from '$lib/components/MarketingConsent.svelte';
 	type Market = { country: string; name: string; currency: string; timezone: string };
 	let handle = $state('');
 	let name = $state('');
@@ -11,6 +12,7 @@
 	let amount = $state('10000');
 	let message = $state('');
 	let busy = $state(false);
+	let marketing = $state(true);
 	let markets = $state<Market[]>([{ country: 'NG', name: 'Nigeria', currency: 'NGN', timezone: 'Africa/Lagos' }]);
 	let country = $state('NG');
 	let market = $derived(markets.find((m) => m.country === country) ?? markets[0]);
@@ -118,7 +120,8 @@
 				base_30_minor: Number(minor),
 				durations: [15, 30, 60],
 				timezone: browserZone(),
-				country: market.country
+				country: market.country,
+				marketing
 			};
 			sessionStorage.setItem('aside_claim_draft', JSON.stringify(draft));
 			window.location.href = `/verify?purpose=claim&challenge=${encodeURIComponent(result.challenge_id)}`;
@@ -209,6 +212,7 @@
 				placeholder="you@example.com"
 			/><span class="form-note">We’ll send a code to confirm it’s you. No password.</span></label
 		>
+		<MarketingConsent bind:checked={marketing} />
 		<button class="button" type="submit" disabled={busy}
 			>{busy ? 'Sending your code…' : 'Send my code'} <span aria-hidden="true">↗</span></button
 		>

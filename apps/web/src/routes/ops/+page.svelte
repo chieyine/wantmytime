@@ -44,7 +44,9 @@
 				>Provider events</a
 			><a href="/ops/provider-cases">Disputes and refunds</a><a href="/ops/exceptions">Payment exceptions</a><a
 				href="/ops/growth">Growth</a
-			><a href="/ops/system">System health</a><a href="/ops/settings">Safeguards</a>
+			><a href="/ops/marketing">Announcements</a><a href="/ops/system">System health</a><a href="/ops/settings"
+				>Safeguards</a
+			>
 		</nav>
 		<section class="readiness-panel">
 			<h2>Product activity · last 7 days</h2>

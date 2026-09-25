@@ -4,7 +4,8 @@ import { env as publicEnv } from '$env/dynamic/public';
 import { reportError } from '$lib/observe/sentry';
 
 const requestIdPattern = /^[A-Za-z0-9._-]{8,64}$/;
-const privatePath = /^\/(app|ops|login|claim|verify|auth|booking|book|offer|checkout|payment|access|dev)(\/|$)/;
+const privatePath =
+	/^\/(app|ops|login|claim|verify|auth|booking|book|offer|checkout|payment|access|dev|unsubscribe)(\/|$)/;
 
 function log(level: 'info' | 'warn' | 'error', message: string, fields: Record<string, unknown>) {
 	// One JSON object per line, matching the API and gateway logs.

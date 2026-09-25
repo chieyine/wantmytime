@@ -307,6 +307,10 @@ func (a *API) applyVerifiedCharge(ctx context.Context, reference string, provide
 	if _, err = q.CreatePaidBookingFromQuote(ctx, store.CreatePaidBookingFromQuoteParams{BookingID: bookingID, BuyerEmail: buyerEmail, QuoteID: quoteID}); err != nil {
 		return "", err
 	}
+	// A paid booking made with this address confirms the buyer's yes to announcements.
+	if err = confirmMarketingEmail(ctx, tx, buyerEmail); err != nil {
+		return "", err
+	}
 	sellerID := quote.SellerID
 	if err = q.RecordServerProductEvent(ctx, store.RecordServerProductEventParams{EventName: "verified_booking_paid", SubjectHash: analyticsSubjectHash(quote.BuyerUserID), Environment: environmentOf(a), SellerID: &sellerID}); err != nil {
 		return "", err

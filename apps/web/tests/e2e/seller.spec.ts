@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { marketingWording } from '../../src/lib/marketing-wording';
 import { codeSentBy, newPerson, openEveryDay, setMode, signUpSeller } from './helpers';
 
 test('a new seller gets a link suggested from their name and a public page', async ({ page }) => {
@@ -9,6 +10,10 @@ test('a new seller gets a link suggested from their name and a public page', asy
 
 	const handle = await signUpSeller(page, seller);
 	await expect(page.getByRole('heading', { name: /nearly open/i })).toBeVisible();
+
+	// The pre-ticked news box reached the API, with the same wording people saw.
+	const news = await (await page.request.get('/api/v1/me/marketing')).json();
+	expect(news).toMatchObject({ subscribed: true, confirmed: true, wording: marketingWording });
 
 	await page.goto(`/${handle}`);
 	await expect(page.getByRole('heading', { level: 1, name: seller.name })).toBeVisible();
@@ -25,8 +30,10 @@ test('a buyer books and pays, and the seller sees the booking', async ({ page, b
 	await buyer.getByRole('link', { name: /pick a time/i }).click();
 	await expect(buyer).toHaveURL(/\/book\/new/);
 	await buyer.getByRole('group', { name: 'Available times' }).getByRole('button').first().click();
+	await expect(buyer.getByLabel(/Email me news/)).toBeChecked();
+	await buyer.getByLabel(/Email me news/).uncheck();
 	await buyer.getByLabel('Your name').fill('Kemi Ade');
-	await buyer.getByLabel('Email').fill(`kemi.${seller.tag}@e2e.test`);
+	await buyer.getByLabel('Email', { exact: true }).fill(`kemi.${seller.tag}@e2e.test`);
 	await buyer.getByRole('button', { name: /continue to payment/i }).click();
 	await expect(buyer).toHaveURL(/\/checkout\//);
 	await buyer.getByRole('button', { name: /confirm test booking/i }).click();

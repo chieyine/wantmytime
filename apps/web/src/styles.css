@@ -5524,6 +5524,24 @@ input[type='time']:focus-within {
 	justify-self: start;
 }
 
+/* The news box: plain, readable wording next to the box, not a bold label. */
+.setup-form label.marketing-consent,
+.marketing-consent {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	font-size: 14px;
+	font-weight: 400;
+	line-height: 1.5;
+	color: var(--ink-secondary);
+}
+.marketing-consent input {
+	margin-top: 3px;
+	flex: none;
+	width: 18px;
+	height: 18px;
+}
+
 /* Display type stays tight but never so tight that letters collide. */
 h1,
 h2 {
