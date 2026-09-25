@@ -1,5 +1,9 @@
-import adapter from '@sveltejs/adapter-node';
+import nodeAdapter from '@sveltejs/adapter-node';
+import vercelAdapter from '@sveltejs/adapter-vercel';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+
+const isVercel = process.env.VERCEL === '1' || process.env.VERCEL === 'true';
+const selectedAdapter = isVercel ? vercelAdapter() : nodeAdapter({ out: 'build' });
 
 // Content Security Policy. SvelteKit adds a nonce (or hash, for prerendered
 // pages) to every script it writes, so no inline script runs without one.
@@ -26,4 +30,4 @@ const csp = {
 	}
 };
 
-export default { preprocess: vitePreprocess(), kit: { adapter: adapter({ out: 'build' }), csp } };
+export default { preprocess: vitePreprocess(), kit: { adapter: selectedAdapter, csp } };

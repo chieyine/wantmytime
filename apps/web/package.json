@@ -10,7 +10,9 @@
     "prepare": "svelte-kit sync || echo 'svelte-kit sync skipped'"
   },
   "devDependencies": {
+    "@sveltejs/adapter-auto": "^7.0.1",
     "@sveltejs/adapter-node": "5.5.7",
+    "@sveltejs/adapter-vercel": "^6.3.4",
     "@sveltejs/kit": "^2.20.0",
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
     "svelte": "^5.25.0",
