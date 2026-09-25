@@ -87,3 +87,22 @@ test('changing the link keeps the old one working', async ({ page }) => {
 	await page.goto(`/${first}`);
 	await expect(page).toHaveURL(new RegExp(`/${next}$`));
 });
+
+test('a taken link offers free ones to pick, like Gmail', async ({ page, browser }) => {
+	const first = newPerson('Kelechi', 'Nwosu');
+	const taken = `kelechi-${first.tag}`;
+	await signUpSeller(page, first, taken);
+
+	const other = await (await browser.newContext()).newPage();
+	await other.goto('/claim');
+	await other.getByLabel('Your name').fill(first.name);
+	await expect(other.getByRole('group', { name: 'Available links' }).getByRole('button').first()).toBeVisible();
+	await other.getByLabel('Your link').fill(taken);
+	await expect(other.locator('#claim-handle-note')).toContainText('That link is taken');
+	const choice = other.getByRole('group', { name: 'Available links' }).getByRole('button').first();
+	const picked = await choice.innerText();
+	await choice.click();
+	await expect(other.getByLabel('Your link')).toHaveValue(picked);
+	await expect(other.locator('#claim-handle-note')).toContainText('is yours if you want it');
+	await other.context().close();
+});

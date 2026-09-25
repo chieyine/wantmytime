@@ -30,6 +30,7 @@ func (a *API) routes() http.Handler {
 	writeLimit := a.limiter("write", 120, time.Minute)
 	handle("GET /health", a.health)
 	handle("GET /api/v1/handles/{handle}/availability", a.rateLimited(publicLimit, a.availability))
+	handle("GET /api/v1/handles/suggestions", a.rateLimited(publicLimit, a.handleSuggestions))
 	handle("GET /api/v1/people/{handle}", a.rateLimited(publicLimit, a.publicPerson))
 	handle("GET /api/v1/people/{handle}/avatar", a.rateLimited(publicLimit, a.publicAvatar))
 	handle("GET /api/v1/people/{handle}/slots", a.rateLimited(publicLimit, a.publicSlots))

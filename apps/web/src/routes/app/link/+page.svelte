@@ -6,6 +6,8 @@
 	import PublicPersonPage from '$lib/components/PublicPersonPage.svelte';
 	import { env } from '$env/dynamic/public';
 	import { handlePattern, linkLabel, validHandle } from '$lib/handle';
+	import { fetchHandleSuggestions } from '$lib/handle-suggestions';
+	import HandleSuggestions from '$lib/components/HandleSuggestions.svelte';
 	let { data } = $props();
 	// The form starts from the saved profile the route loaded, then belongs to the page while the seller edits.
 	const saved = untrack(() => data.profile);
@@ -95,6 +97,7 @@
 	let handleState = $state<'same' | 'checking' | 'available' | 'taken' | 'invalid'>('same');
 	let handleBusy = $state(false);
 	let handleMessage = $state('');
+	let handleSuggestions = $state<string[]>([]);
 	let linkHost = $derived(
 		linkLabel(env.PUBLIC_APP_ORIGIN || (typeof window === 'undefined' ? '' : window.location.origin))
 	);
@@ -111,8 +114,11 @@
 		handleState = 'checking';
 		const timer = setTimeout(async () => {
 			try {
-				const r = await api<{ available: boolean }>(`/api/v1/handles/${encodeURIComponent(wanted)}/availability`);
-				if (newHandle.trim().toLowerCase() === wanted) handleState = r.available ? 'available' : 'taken';
+				// One request: is it free, and if not, which links from the seller's name are.
+				const r = await fetchHandleSuggestions(name, wanted);
+				if (newHandle.trim().toLowerCase() !== wanted) return;
+				handleState = r.wanted?.available ? 'available' : 'taken';
+				handleSuggestions = r.suggestions;
 			} catch {
 				handleState = 'same';
 			}
@@ -281,9 +287,16 @@
 						{#if handleMessage}{handleMessage}{:else if handleState === 'checking'}Checking…{:else if handleState === 'available'}{linkHost}/{newHandle
 								.trim()
 								.toLowerCase()} is free. Your old link will keep working and forward here.{:else if handleState === 'taken'}That
-							link is taken. Try another.{:else if handleState === 'invalid'}Use 3 to 24 letters, numbers or single
-							hyphens.{:else}This is the address people use to book you. You can change it up to 3 times in 30 days.{/if}
+							link is taken. Pick a free one below or try another.{:else if handleState === 'invalid'}Use 3 to 24
+							letters, numbers or single hyphens.{:else}This is the address people use to book you. You can change it up
+							to 3 times in 30 days.{/if}
 					</p>
+					{#if handleState === 'taken'}<HandleSuggestions
+							suggestions={handleSuggestions}
+							current={newHandle}
+							label="Free"
+							onpick={(next) => (newHandle = next)}
+						/>{/if}
 					{#if handleState === 'available'}<button
 							type="button"
 							class="button button-small"

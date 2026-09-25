@@ -1062,3 +1062,33 @@ func TestSellerChangesTheirLink(t *testing.T) {
 		t.Fatal("a deleted seller's earlier link must be held")
 	}
 }
+
+func TestLinkSuggestionsOfferOnlyFreeLinks(t *testing.T) {
+	h := newHarness(t)
+	s := h.newSeller("fixed")
+	// Someone already has the obvious link for this name.
+	name := "Chioma " + strings.TrimPrefix(s.handle, "s")
+	taken := normalizeHandle(strings.Join(nameParts(name), ""))
+	if _, err := itPool.Exec(context.Background(), `UPDATE seller_profiles SET handle=$2 WHERE handle=$1`, s.handle, taken); err != nil {
+		t.Fatal(err)
+	}
+	anon := h.client("")
+	got := anon.expect(200, "GET", "/api/v1/handles/suggestions?name="+url.QueryEscape(name)+"&want="+taken, nil)
+	wanted := got["wanted"].(map[string]any)
+	if wanted["available"] != false {
+		t.Fatalf("taken link reported free: %v", wanted)
+	}
+	suggestions := got["suggestions"].([]any)
+	if len(suggestions) == 0 || len(suggestions) > 4 {
+		t.Fatalf("suggestions %v", suggestions)
+	}
+	for _, s := range suggestions {
+		if s == taken {
+			t.Fatalf("taken link suggested: %v", suggestions)
+		}
+		if anon.expect(200, "GET", "/api/v1/handles/"+s.(string)+"/availability", nil)["available"] != true {
+			t.Fatalf("suggested %v is not free", s)
+		}
+	}
+	anon.expect(422, "GET", "/api/v1/handles/suggestions?name="+strings.Repeat("a", 81), nil)
+}

@@ -44,12 +44,6 @@ export function validHandle(value: string): boolean {
 	return h.length >= 3 && h.length <= 24 && !reserved.has(h) && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(h);
 }
 
-/** Suggests a link from a display name: "Adá Obi" becomes "adaobi". */
-export function suggestHandle(name: string): string {
-	const plain = name.normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase();
-	return plain.replace(/[^a-z0-9]+/g, '').slice(0, 24);
-}
-
 /** The link as people read it, without the scheme: wantmytime.com/adaobi. */
 export function linkLabel(url: string): string {
 	return url.replace(/^https?:\/\//, '').replace(/\/$/, '');

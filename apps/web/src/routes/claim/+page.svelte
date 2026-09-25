@@ -3,7 +3,9 @@
 	import { api } from '$lib/api';
 	import { browserZone } from '$lib/timezones';
 	import { currencySymbol, parseMoneyToMinor } from '$lib/money';
-	import { handlePattern, suggestHandle, validHandle } from '$lib/handle';
+	import { handlePattern, validHandle } from '$lib/handle';
+	import { fetchHandleSuggestions } from '$lib/handle-suggestions';
+	import HandleSuggestions from '$lib/components/HandleSuggestions.svelte';
 	import MarketingConsent from '$lib/components/MarketingConsent.svelte';
 	type Market = { country: string; name: string; currency: string; timezone: string };
 	let handle = $state('');
@@ -21,62 +23,38 @@
 	// The link follows the name until the person edits it themselves.
 	let handleTouched = $state(!!params.get('handle'));
 	let handleState = $state<'idle' | 'checking' | 'available' | 'taken' | 'invalid'>('idle');
-	async function isFree(candidate: string) {
-		return (await api<{ available: boolean }>(`/api/v1/handles/${encodeURIComponent(candidate)}/availability`))
-			.available;
-	}
+	let suggestions = $state<string[]>([]);
+	// One request per pause in typing: free links for the name, and whether the
+	// typed link is free. Until the person types a link, the best one fills in.
 	$effect(() => {
-		if (handleTouched) return;
-		const base = suggestHandle(name);
-		if (base.length < 3) {
-			handle = '';
-			return;
-		}
-		const parts = name
-			.normalize('NFKD')
-			.replace(/[\u0300-\u036f]/g, '')
-			.toLowerCase()
-			.split(/[^a-z0-9]+/)
-			.filter(Boolean);
-		const candidates = [
-			...new Set([base, parts.join('-').slice(0, 24), ...[1, 2, 3].map((n) => `${base.slice(0, 22)}${n}`)])
-		].filter(validHandle);
-		const timer = setTimeout(async () => {
-			for (const candidate of candidates) {
-				try {
-					if (await isFree(candidate)) {
-						if (!handleTouched) handle = candidate;
-						return;
-					}
-				} catch {
-					return;
-				}
-			}
-			if (!handleTouched) handle = candidates[0] ?? '';
-		}, 350);
-		return () => clearTimeout(timer);
-	});
-	$effect(() => {
-		const wanted = handle.trim().toLowerCase();
-		if (!wanted) {
+		const typedName = name.trim();
+		const wanted = handleTouched ? handle.trim().toLowerCase() : '';
+		if (!typedName && !wanted) {
+			suggestions = [];
 			handleState = 'idle';
 			return;
 		}
-		if (!validHandle(wanted)) {
-			handleState = 'invalid';
-			return;
-		}
-		handleState = 'checking';
+		if (wanted) handleState = validHandle(wanted) ? 'checking' : 'invalid';
 		const timer = setTimeout(async () => {
 			try {
-				const free = await isFree(wanted);
-				if (handle.trim().toLowerCase() === wanted) handleState = free ? 'available' : 'taken';
+				const result = await fetchHandleSuggestions(typedName, wanted);
+				suggestions = result.suggestions;
+				if (!handleTouched) {
+					handle = result.suggestions[0] ?? '';
+					handleState = handle ? 'available' : 'idle';
+				} else if (result.wanted?.valid && handle.trim().toLowerCase() === wanted) {
+					handleState = result.wanted.available ? 'available' : 'taken';
+				}
 			} catch {
-				handleState = 'idle';
+				// Suggestions are a convenience; the form still works without them.
 			}
-		}, 350);
+		}, 300);
 		return () => clearTimeout(timer);
 	});
+	function pickHandle(next: string) {
+		handle = next;
+		handleTouched = true;
+	}
 
 	onMount(async () => {
 		try {
@@ -177,9 +155,16 @@
 			</div>
 			<p id="claim-handle-note" class="form-note" aria-live="polite">
 				{#if handleState === 'available'}wantmytime.com/{handle.trim().toLowerCase()} is yours if you want it.{:else if handleState === 'taken'}That
-					link is taken. Try another.{:else if handleState === 'invalid'}Use 3 to 24 letters, numbers or single hyphens.{:else if handleState === 'checking'}Checking…{:else}We’ll
-					suggest one from your name. You can change it later.{/if}
+					link is taken. Pick a free one below or try another.{:else if handleState === 'invalid'}Use 3 to 24 letters,
+					numbers or single hyphens.{:else if handleState === 'checking'}Checking…{:else}We’ll suggest one from your
+					name. You can change it later.{/if}
 			</p>
+			<HandleSuggestions
+				{suggestions}
+				current={handle}
+				label={handleState === 'taken' ? 'Free' : 'Also free'}
+				onpick={pickHandle}
+			/>
 		</div>
 		{#if markets.length > 1}
 			<label

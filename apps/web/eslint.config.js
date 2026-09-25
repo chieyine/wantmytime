@@ -26,5 +26,16 @@ export default ts.config(
 			'svelte/no-navigation-without-resolve': 'off'
 		}
 	},
-	{ ignores: ['build/', '.svelte-kit/', 'node_modules/', 'static/', '.e2e/', 'test-results/', 'playwright-report/'] }
+	{
+		ignores: [
+			'build/',
+			'.svelte-kit/',
+			'node_modules/',
+			'static/',
+			'.e2e/',
+			'test-results/',
+			'playwright-report/',
+			'.vercel/'
+		]
+	}
 );
