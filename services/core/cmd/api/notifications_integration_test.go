@@ -246,8 +246,12 @@ func TestEmailRenderingEscapesAndFormats(t *testing.T) {
 			t.Errorf("formatMoney(%d) = %s, want %s", minor, got, want)
 		}
 	}
-	if got := formatMoney("USD", 250000); got != "USD 2,500" {
+	if got := formatMoney("USD", 250000); got != "$2,500" {
 		t.Errorf("USD formatting: %s", got)
+	}
+	// A currency without a known symbol is written with its ISO code.
+	if got := formatMoney("XOF", 250000); got != "XOF 2,500" {
+		t.Errorf("fallback formatting: %s", got)
 	}
 	raw, err := buildMIME("WantMyTime <no-reply@aside.test>", "", c.message("to@x.test", ""))
 	if err != nil || !strings.Contains(string(raw), "multipart/alternative") || !strings.Contains(string(raw), "Subject: Hi <b>") {

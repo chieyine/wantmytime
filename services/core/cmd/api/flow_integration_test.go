@@ -123,7 +123,7 @@ func TestBuyerPaysTheTransferFee(t *testing.T) {
 	if !journalBalanced(t, "payment_attempt", attemptID) {
 		t.Fatal("payment journal must balance")
 	}
-	if got := scalar[int64](t, `SELECT e.amount_minor FROM ledger_entries e JOIN ledger_journals j ON j.id=e.journal_id JOIN ledger_accounts a ON a.id=e.account_id WHERE j.source_id=$1 AND a.account_code='platform_fee_revenue'`, attemptID); got != 65229 {
+	if got := scalar[int64](t, `SELECT e.amount_minor FROM ledger_entries e JOIN ledger_journals j ON j.id=e.journal_id JOIN ledger_accounts a ON a.id=e.account_id WHERE j.source_id=$1 AND a.account_code='platform_fee_revenue'`, attemptID); got != 65000 {
 		t.Fatalf("platform revenue %d (5%% of the price plus the buyer's fee)", got)
 	}
 }

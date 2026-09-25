@@ -472,7 +472,8 @@ func newFakeKora(t *testing.T) *fakeKora {
 					total += existing.amount
 				}
 			}
-			if !found || c.status != "success" || amount <= 0 || total+amount > c.amount {
+			// The buyer pays the price plus Kora's fee, and all of it can come back.
+			if !found || c.status != "success" || amount <= 0 || total+amount > c.paid {
 				fail(400, "Refund amount cannot be more than the transaction amount")
 				return
 			}
