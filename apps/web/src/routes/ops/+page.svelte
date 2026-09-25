@@ -49,7 +49,7 @@
 		<section class="readiness-panel">
 			<h2>Product activity · last 7 days</h2>
 			{#if summary.product_events_7d.length}<ul>
-					{#each summary.product_events_7d as item}<li>
+					{#each summary.product_events_7d as item (item.event)}<li>
 							{item.event.replaceAll('_', ' ')} <strong>{item.count}</strong>
 						</li>{/each}
 				</ul>{:else}<p>No activity has been recorded yet.</p>{/if}

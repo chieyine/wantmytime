@@ -376,14 +376,14 @@
 				<fieldset>
 					<legend>Available conversation lengths</legend>
 					<div class="duration-row">
-						{#each [15, 30, 60] as d}<label class:selected={durations.includes(d)}
+						{#each [15, 30, 60] as d (d)}<label class:selected={durations.includes(d)}
 								><input type="checkbox" checked={durations.includes(d)} onchange={() => toggle(d)} /> {d} min</label
 							>{/each}
 					</div>
 				</fieldset>
 				<label
 					>Your timezone<select class="field" bind:value={timezone}
-						>{#each timezoneOptions(timezone) as zone}<option value={zone}>{zone}</option>{/each}</select
+						>{#each timezoneOptions(timezone) as zone (zone)}<option value={zone}>{zone}</option>{/each}</select
 					></label
 				>
 				<label class="check-line"><input type="checkbox" bind:checked={paused} /> Pause new booking requests</label>

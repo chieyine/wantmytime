@@ -55,7 +55,7 @@
 	<p class="eyebrow">Growth measurement</p>
 	<h1 class="page-heading">Count what happened.</h1>
 	<div class="funnel-range" role="group" aria-label="Period">
-		{#each [7, 30, 90] as d}<button
+		{#each [7, 30, 90] as d (d)}<button
 				type="button"
 				class:selected={days === d}
 				aria-pressed={days === d}
@@ -63,7 +63,7 @@
 			>{/each}
 	</div>
 	{#if funnels}
-		{#each [{ title: 'Buyers: from page view to session', steps: funnels.buyer, of: 'of views' }, { title: 'Sellers: from claimed link to paid booking', steps: funnels.seller, of: 'of claimed' }] as f}
+		{#each [{ title: 'Buyers: from page view to session', steps: funnels.buyer, of: 'of views' }, { title: 'Sellers: from claimed link to paid booking', steps: funnels.seller, of: 'of claimed' }] as f (f.title)}
 			{@const w = widths(f.steps)}
 			<section class="readiness-panel funnel">
 				<h2>{f.title}</h2>
@@ -76,7 +76,7 @@
 						></thead
 					>
 					<tbody>
-						{#each f.steps as step, i}
+						{#each f.steps as step, i (step.key)}
 							<tr title={`${step.label}: ${step.count} ${step.basis}, ${pct(step.count, f.steps[0].count)} ${f.of}`}>
 								<th scope="row">{step.label}<small>{step.basis}</small></th>
 								<td class="funnel-bar-cell" aria-hidden="true"
@@ -104,7 +104,7 @@
 		{#if funnels.includes_simulated_payments}<p class="notice notice-info">
 				This is not production, so simulated payments count as paid.
 			</p>{/if}
-		{#each funnels.notes as note}<p class="form-note">{note}</p>{/each}
+		{#each funnels.notes as note (note)}<p class="form-note">{note}</p>{/each}
 	{:else if funnelMessage}<div class="notice notice-warning" role="status">{funnelMessage}</div>{/if}
 	{#if growth}
 		<p class="page-intro">
@@ -113,7 +113,7 @@
 		</p>
 		{#if growth.events_7d.length}
 			<div class="appointment-slip">
-				{#each growth.events_7d as item}<div>
+				{#each growth.events_7d as item (item.event)}<div>
 						<small>{item.event.replaceAll('_', ' ').toUpperCase()}</small><strong>{item.count}</strong>
 					</div>{/each}
 			</div>
@@ -128,7 +128,7 @@
 			</div>
 			<p>{growth.attribution_rule}</p>
 			{#if growth.cohorts.length}<div class="list-stack">
-					{#each growth.cohorts as cohort}<article class="list-card">
+					{#each growth.cohorts as cohort (cohort.month)}<article class="list-card">
 							<div>
 								<strong>{cohort.month}</strong>
 								<p>{cohort.attributed_relationships} attributed relationships</p>
@@ -136,7 +136,7 @@
 							</div>
 						</article>{/each}
 				</div>{:else}<p>No qualifying live-payment relationships have been recorded.</p>{/if}
-			{#each growth.limitations as limitation}<p class="form-note">{limitation}</p>{/each}
+			{#each growth.limitations as limitation (limitation)}<p class="form-note">{limitation}</p>{/each}
 		</section>
 		<section class="readiness-panel">
 			<h2>Measurement boundaries</h2>

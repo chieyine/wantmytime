@@ -62,7 +62,7 @@
 	{#if message}<p class="notice notice-info" aria-live="polite">{message}</p>{/if}{#if loading && !events.length}<p>
 			Loading provider events…
 		</p>{:else if events.length}<div class="list-stack">
-			{#each events as item}<article class="list-card">
+			{#each events as item (item.id)}<article class="list-card">
 					<div>
 						<strong>{item.event_type || 'Provider event'} · {item.state}</strong>
 						<p>Reference: {item.reference || 'Unavailable'}</p>

@@ -48,7 +48,7 @@
 		</div>{:else if !bookings.length}<p class="page-intro">
 			No bookings are connected to this verified email.
 		</p>{:else}<div class="list-stack">
-			{#each bookings as booking}<a class="list-card" href={`/booking/${encodeURIComponent(booking.id)}`}
+			{#each bookings as booking (booking.id)}<a class="list-card" href={`/booking/${encodeURIComponent(booking.id)}`}
 					><div>
 						<strong>Time with {booking.seller}</strong>
 						<p>{booking.duration_minutes} minutes · {new Date(booking.starts_at).toLocaleString()}</p>

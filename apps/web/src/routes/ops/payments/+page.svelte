@@ -46,7 +46,7 @@
 		>
 			Loading payment attempts…
 		</p>{:else if payments.length}<div class="list-stack">
-			{#each payments as item}<a class="list-card" href={`/ops/payments/${encodeURIComponent(item.id)}`}
+			{#each payments as item (item.id)}<a class="list-card" href={`/ops/payments/${encodeURIComponent(item.id)}`}
 					><div>
 						<strong>{formatMoney(item.amount_minor, item.currency)} · {item.state.replaceAll('_', ' ')}</strong>
 						<p>{item.provider} · {item.environment} · booking {item.booking_id}</p>

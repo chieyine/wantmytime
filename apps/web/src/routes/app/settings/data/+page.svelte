@@ -83,7 +83,7 @@
 				<div class="notice notice-warning" role="status">
 					<strong>Not yet. First:</strong>
 					<ul>
-						{#each blockers as blocker}<li>{blocker}</li>{/each}
+						{#each blockers as blocker (blocker)}<li>{blocker}</li>{/each}
 					</ul>
 				</div>
 			{/if}

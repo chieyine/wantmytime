@@ -196,12 +196,12 @@
 				</div>
 				<label
 					>TIMEZONE<select class="field" bind:value={timezone}
-						>{#each timezoneOptions(timezone) as zone}<option value={zone}>{zone}</option>{/each}</select
+						>{#each timezoneOptions(timezone) as zone (zone)}<option value={zone}>{zone}</option>{/each}</select
 					></label
 				>
 			</div>
 			<div class="availability-week" role="group" aria-label="Choose a day to edit">
-				{#each days as day}
+				{#each days as day (day.value)}
 					{@const dayWindows = windows.filter((window) => window.weekday === day.value)}
 					<button
 						type="button"
@@ -213,7 +213,7 @@
 								? `${dayWindows.length} ${dayWindows.length === 1 ? 'window' : 'windows'}`
 								: 'Closed'}</strong
 						><span class="availability-week-track" aria-hidden="true"
-							>{#each dayWindows as window}<i style={rangeStyle(window)}></i>{/each}</span
+							>{#each dayWindows as window, i (i)}<i style={rangeStyle(window)}></i>{/each}</span
 						></button
 					>
 				{/each}
@@ -233,7 +233,7 @@
 				{#if !selectedWindows.length}<p class="availability-day-empty">
 						This day is closed. Add hours to make it available.
 					</p>{/if}
-				{#each windows as window, index}{#if window.weekday === selectedDay}<div class="availability-window">
+				{#each windows as window, index (index)}{#if window.weekday === selectedDay}<div class="availability-window">
 							<label>FROM<input class="field" type="time" step="900" bind:value={window.start} required /></label><span
 								aria-hidden="true">→</span
 							><label>UNTIL<input class="field" type="time" step="900" bind:value={window.end} required /></label
@@ -293,7 +293,7 @@
 						converted to their own timezone.
 					</p>
 					<div class="availability-day-track" aria-hidden="true">
-						<span>00:00</span><span>12:00</span><span>24:00</span>{#each selectedWindows as window}<i
+						<span>00:00</span><span>12:00</span><span>24:00</span>{#each selectedWindows as window, i (i)}<i
 								style={rangeStyle(window)}
 							></i>{/each}
 					</div>
@@ -341,7 +341,7 @@
 					disabled={!overrideDate || overrideBusy}>CLOSE DATE ↗</button
 				>{#if overrideMessage}<p class="notice notice-info" aria-live="polite">
 						{overrideMessage}
-					</p>{/if}{#each overrides as item}<div class="availability-override-row">
+					</p>{/if}{#each overrides as item (item.date)}<div class="availability-override-row">
 						<span>{item.date}</span><strong>CLOSED</strong><button
 							type="button"
 							onclick={() => removeOverride(item.date)}

@@ -4,7 +4,7 @@
 	import { recordProductEvent } from '$lib/analytics';
 	import { formatMoney, priceForDuration, methodLabels } from '$lib/money';
 	import { page } from '$app/state';
-	import { viewerTimeZone, todayIn, sameClock, clockIn, zoneCity, timeOnly } from '$lib/time';
+	import { viewerTimeZone, todayIn, sameClock, clockIn, zoneCity, timeOnly, nextDay } from '$lib/time';
 	let seller = $derived((page.url.searchParams.get('seller') ?? '').trim().toLowerCase());
 	let duration = $derived.by(() => {
 		const d = Number(page.url.searchParams.get('duration') ?? 30);
@@ -59,9 +59,7 @@
 				// Open on the first day that has a free time, looking up to two weeks ahead.
 				await loadSlots();
 				for (let i = 1; i < 14 && slots.length === 0 && !message; i++) {
-					const next = new Date(`${day}T12:00:00Z`);
-					next.setUTCDate(next.getUTCDate() + 1);
-					day = next.toISOString().slice(0, 10);
+					day = nextDay(day);
 					await loadSlots();
 				}
 			}
@@ -178,7 +176,7 @@
 								{message || 'Nothing free on this day. Try another.'}
 							</p>
 						{:else}<div class="booking-times" role="group" aria-label="Available times">
-								{#each slots as slot}<button
+								{#each slots as slot (slot.starts_at)}<button
 										type="button"
 										class:selected={selected === slot.starts_at}
 										aria-pressed={selected === slot.starts_at}

@@ -60,7 +60,7 @@
 			<fieldset>
 				<legend>Policy for new bookings</legend>
 				<div class="policy-options">
-					{#each options as option}
+					{#each options as option (option.key)}
 						<label class:chosen={chosen === option.key}
 							><input type="radio" name="policy" value={option.key} bind:group={chosen} />
 							<span><strong>{option.name}</strong><small>{option.summary}</small></span></label

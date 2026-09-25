@@ -127,7 +127,7 @@
 		>
 			<h2>Rows awaiting reconciliation</h2>
 			<div class="list-stack">
-				{#each unmatchedRows as row}<article class="list-card">
+				{#each unmatchedRows as row (row.id)}<article class="list-card">
 						<div>
 							<strong
 								>{row.state.replaceAll('_', ' ')} · {row.currency === 'NGN'
@@ -145,7 +145,7 @@
 		</section>{/if}{#if loading && !items.length}<p class="page-intro">Loading…</p>{:else if items.length}<div
 			class="list-stack"
 		>
-			{#each items as item}<article class="list-card">
+			{#each items as item (item.id)}<article class="list-card">
 					<div>
 						<strong>{item.seller} · {formatMoney(item.amount_minor, item.currency)}</strong>
 						<p>Booking {item.booking_id} · {item.route.replaceAll('_', ' ')}</p>

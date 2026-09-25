@@ -53,7 +53,7 @@
 	{#if message}<p class="notice notice-warning" aria-live="polite">{message}</p>{/if}{#if loading && !cases.length}<p>
 			Loading provider cases…
 		</p>{:else if cases.length}<div class="list-stack">
-			{#each cases as item}<article class="list-card">
+			{#each cases as item (item.id)}<article class="list-card">
 					<div>
 						<strong>{item.type} · {item.state}</strong>
 						<p>{item.provider_reference} · provider case {item.provider_case_id}</p>

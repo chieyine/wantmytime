@@ -40,7 +40,7 @@
 	{#if message}<p class="notice notice-info" aria-live="polite">{message}</p>{/if}{#if sessions.length}<div
 			class="list-stack"
 		>
-			{#each sessions as session}<article class="list-card">
+			{#each sessions as session, i (`${session.created_at}-${i}`)}<article class="list-card">
 					<div>
 						<strong>{session.current ? 'This session' : 'Signed-in session'}</strong>
 						<p>Started {new Date(session.created_at).toLocaleString()}</p>

@@ -36,7 +36,7 @@
 	<p class="eyebrow">Delivery queue</p>
 	<h1 class="page-heading">Meeting links past their deadline.</h1>
 	{#if message}<div class="notice notice-warning">{message}</div>{:else if items.length}<div class="list-stack">
-			{#each items as item}<article class="list-card">
+			{#each items as item (item.id)}<article class="list-card">
 					<div>
 						<strong>{item.seller_name} · {item.seller_handle}</strong>
 						<p>For {item.buyer_name} · starts {new Date(item.starts_at).toLocaleString()}</p>

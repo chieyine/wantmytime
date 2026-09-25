@@ -45,7 +45,7 @@
 	{#if loading && !items.length}<p class="page-intro">Loading exception records…</p>{:else if items.length}<div
 			class="list-stack"
 		>
-			{#each items as item}<a class="list-card" href={`/ops/exceptions/${encodeURIComponent(item.id)}`}
+			{#each items as item (item.id)}<a class="list-card" href={`/ops/exceptions/${encodeURIComponent(item.id)}`}
 					><div>
 						<strong>{item.kind.replaceAll('_', ' ')} · {item.state.replaceAll('_', ' ')}</strong>
 						<p>{item.reason}</p>

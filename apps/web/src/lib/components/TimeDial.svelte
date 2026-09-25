@@ -50,7 +50,7 @@
 			style={`--reveal-length: ${(circumference * duration) / 60}px`}
 			transform="rotate(-90 300 300)"
 		/>
-		{#each ticks as tick}
+		{#each ticks as tick (tick)}
 			{@const start = endpoint(tick * 6, tick % 5 === 0 ? 246 : 261)}
 			{@const end = endpoint(tick * 6, 276)}
 			<line

@@ -192,7 +192,7 @@
 					>{#if slots.length}<fieldset>
 							<legend>Available times (your timezone)</legend>
 							<div class="slot-list">
-								{#each slots as slot}<button
+								{#each slots as slot (slot.starts_at)}<button
 										type="button"
 										class="slot-option"
 										class:selected={selected === slot.starts_at}

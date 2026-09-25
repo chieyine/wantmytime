@@ -37,7 +37,7 @@
 			<a class="workspace-brand" href="/">WantMyTime<span>.</span></a><span>YOUR SPACE</span>
 		</div>
 		<nav aria-label="Workspace">
-			{#each navigation as item}
+			{#each navigation as item (item.href)}
 				<a href={item.href} class:active={current(item.href)} aria-current={current(item.href) ? 'page' : undefined}
 					><small>{item.number}</small><span>{item.label}</span><span aria-hidden="true">↗</span></a
 				>
@@ -63,7 +63,7 @@
 		</header>
 		{#if signOutError}<p class="workspace-signout-error" role="alert">{signOutError}</p>{/if}
 		<nav class="workspace-mobile-nav" aria-label="Workspace sections">
-			{#each navigation as item}<a
+			{#each navigation as item (item.href)}<a
 					href={item.href}
 					class:active={current(item.href)}
 					aria-current={current(item.href) ? 'page' : undefined}>{item.label}</a

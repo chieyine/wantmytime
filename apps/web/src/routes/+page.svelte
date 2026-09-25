@@ -85,7 +85,7 @@
 				<div class="brand-duration">
 					<span>CHOOSE A LENGTH</span>
 					<div role="group" aria-label="Explore conversation lengths">
-						{#each [15, 30, 60] as option}<button
+						{#each [15, 30, 60] as option (option)}<button
 								type="button"
 								class:active={duration === option}
 								aria-pressed={duration === option}

@@ -37,7 +37,7 @@
 	<p class="eyebrow">Audit</p>
 	<h1 class="page-heading">A record of sensitive actions.</h1>
 	{#if message}<p class="notice notice-warning">{message}</p>{/if}{#if events.length}<div class="list-stack">
-			{#each events as event}<article class="list-card">
+			{#each events as event (event.id)}<article class="list-card">
 					<div>
 						<strong>{event.action}</strong>
 						<p>{event.reason || 'System event'} · target {event.target_id || '—'}</p>

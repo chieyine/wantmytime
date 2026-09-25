@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
-	import { viewerTimeZone, todayIn, zoneCity, timeOnly } from '$lib/time';
+	import { viewerTimeZone, todayIn, zoneCity, timeOnly, nextDay } from '$lib/time';
 	import { currencySymbol, formatMoney, parseMoneyToMinor } from '$lib/money';
 	let { params } = $props();
 	type Offer = {
@@ -55,9 +55,7 @@
 		date = todayIn(zone);
 		await loadSlots();
 		for (let i = 1; i < 14 && slots.length === 0; i++) {
-			const next = new Date(`${date}T12:00:00Z`);
-			next.setUTCDate(next.getUTCDate() + 1);
-			date = next.toISOString().slice(0, 10);
+			date = nextDay(date);
 			await loadSlots();
 		}
 	}
@@ -186,7 +184,7 @@
 				{:else if slots.length}<fieldset>
 						<legend>Available times</legend>
 						<div class="slot-list">
-							{#each slots as slot}<button
+							{#each slots as slot (slot.starts_at)}<button
 									type="button"
 									class="slot-option"
 									class:selected={selected === slot.starts_at}

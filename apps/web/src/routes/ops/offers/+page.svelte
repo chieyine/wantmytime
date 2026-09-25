@@ -37,7 +37,7 @@
 	<p class="eyebrow">Offers</p>
 	<h1 class="page-heading">Offer activity.</h1>
 	{#if message}<p class="notice notice-warning">{message}</p>{/if}{#if offers.length}<div class="list-stack">
-			{#each offers as offer}<article class="list-card">
+			{#each offers as offer (offer.id)}<article class="list-card">
 					<div>
 						<strong>{offer.buyer_name} → {offer.seller}</strong>
 						<p>{offer.duration_minutes} minutes · {offer.state.replaceAll('_', ' ')}</p>

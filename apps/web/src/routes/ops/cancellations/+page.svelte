@@ -53,7 +53,7 @@
 	{#if message}<p class="notice notice-info" aria-live="polite">{message}</p>{/if}{#if requests.length}<div
 			class="list-stack"
 		>
-			{#each requests as item}<article class="list-card">
+			{#each requests as item (item.id)}<article class="list-card">
 					<div>
 						<strong>{item.requester} · {item.seller}</strong>
 						<p>Booking {item.booking_id} · {new Date(item.starts_at).toLocaleString()}</p>

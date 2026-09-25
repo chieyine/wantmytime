@@ -45,7 +45,7 @@
 	{#if message}<p class="notice notice-info" aria-live="polite">{message}</p>{/if}{#if people.length}<div
 			class="list-stack"
 		>
-			{#each people as person}<article class="list-card">
+			{#each people as person (person.id)}<article class="list-card">
 					<div>
 						<strong><a class="text-link" href={`/ops/people/${encodeURIComponent(person.id)}`}>{person.name}</a></strong
 						>

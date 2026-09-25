@@ -294,7 +294,7 @@
 						</p>
 					{/if}
 				</div>
-				{#each others as method}<button class="text-link" onclick={() => start(method)} disabled={busy}
+				{#each others as method (method)}<button class="text-link" onclick={() => start(method)} disabled={busy}
 						>Pay by {(methodLabels[method] ?? method).toLowerCase()} instead</button
 					>{/each}
 			{:else}
@@ -306,7 +306,7 @@
 					>{busy ? 'Getting your payment ready…' : `Pay by ${(methodLabels[primary] ?? primary).toLowerCase()}`}</button
 				>
 				<p class="form-note">{methodNote(primary)}</p>
-				{#each others as method}
+				{#each others as method (method)}
 					<button class="text-link" onclick={() => start(method)} disabled={busy}
 						>Pay by {(methodLabels[method] ?? method).toLowerCase()} instead</button
 					>

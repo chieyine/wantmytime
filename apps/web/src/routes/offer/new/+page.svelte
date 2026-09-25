@@ -96,7 +96,7 @@
 		>
 			<label
 				>How long?<select class="field" bind:value={duration}
-					>{#each person.durations as d}<option value={d}>{d} minutes</option>{/each}</select
+					>{#each person.durations as d (d)}<option value={d}>{d} minutes</option>{/each}</select
 				></label
 			>
 			<label

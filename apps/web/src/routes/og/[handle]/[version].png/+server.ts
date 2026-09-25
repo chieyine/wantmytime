@@ -122,7 +122,7 @@ export const GET: RequestHandler = async ({ params, fetch }) => {
 		color: [number, number, number, number],
 		maxChars: number
 	) => {
-		let normalized = text
+		const normalized = text
 			.normalize('NFKD')
 			.replace(/[\u0300-\u036f]/g, '')
 			.replace(/[^\x20-\x7e]/g, '')
@@ -148,7 +148,9 @@ export const GET: RequestHandler = async ({ params, fetch }) => {
 	let siteHost = 'wantmytime.com';
 	try {
 		siteHost = new URL(env.PUBLIC_APP_ORIGIN || 'https://wantmytime.com').host;
-	} catch {}
+	} catch {
+		// Keep the default host when the configured origin is malformed.
+	}
 	const price =
 		person.mode !== 'offer' && !person.paused
 			? `${(person.currency || 'NGN').replace(/[^A-Z]/g, '')} ${Math.round(Number(person.base_30_minor) / 100).toLocaleString('en-US')} / 30 MIN`

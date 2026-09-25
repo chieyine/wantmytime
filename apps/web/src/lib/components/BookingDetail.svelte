@@ -450,7 +450,7 @@
 				<section class="reschedule-section">
 					<h2>Change the time</h2>
 					<p>The current booking stays in place unless the other person accepts a new time.</p>
-					{#each reschedules as request}
+					{#each reschedules as request (request.id)}
 						<article class="list-card">
 							<div>
 								<strong>{request.state === 'pending' ? 'New time proposed' : `Request ${request.state}`}</strong>
@@ -481,7 +481,7 @@
 						{#if slots.length}<fieldset>
 								<legend>Available times</legend>
 								<div class="slot-list">
-									{#each slots as slot}<button
+									{#each slots as slot (slot.starts_at)}<button
 											type="button"
 											class="slot-option"
 											class:selected={selected === slot.starts_at}
@@ -640,7 +640,7 @@
 				{:else if life.can_review}
 					<h2>How was it?</h2>
 					<div class="star-input" role="radiogroup" aria-label="Rating">
-						{#each [1, 2, 3, 4, 5] as n}<button
+						{#each [1, 2, 3, 4, 5] as n (n)}<button
 								type="button"
 								role="radio"
 								aria-checked={rating === n}

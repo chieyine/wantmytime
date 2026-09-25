@@ -91,7 +91,7 @@
 			{:else}<fieldset class="person-duration">
 					<legend>HOW LONG?</legend>
 					<div class="person-duration-options">
-						{#each person.durations as d}<button
+						{#each person.durations as d (d)}<button
 								type="button"
 								class:active={duration === d}
 								aria-pressed={duration === d}
@@ -108,8 +108,7 @@
 							>PICK A TIME <span aria-hidden="true">↗</span></a
 						>{/if}
 					<p class="person-fineprint">
-						{paymentMethodsSentence(person.payment_methods)} The booking is yours the moment the payment arrives.{#if person.cancellation_policy}{' '}{person
-								.cancellation_policy.name} cancellation: {person.cancellation_policy.summary}{/if}
+						{paymentMethodsSentence(person.payment_methods)} The booking is yours the moment the payment arrives.{#if person.cancellation_policy}{` ${person.cancellation_policy.name} cancellation: ${person.cancellation_policy.summary}`}{/if}
 					</p>
 					{#if person.mode === 'both'}<div class="person-offer-alt">
 							<p>
