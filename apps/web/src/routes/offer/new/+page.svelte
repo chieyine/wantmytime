@@ -30,7 +30,7 @@
 		}
 	});
 	async function submit() {
-		if (!person || person.mode !== 'offer' || person.paused || !person.ready) return;
+		if (!person || person.mode === 'fixed' || person.paused || !person.ready) return;
 		const parsed = parseMoneyToMinor(amount);
 		if (parsed === null || parsed < 100n || parsed > 100000000n) {
 			message = `Enter an offer between ${formatMoney(100, currency)} and ${formatMoney(100000000, currency)}.`;
@@ -56,7 +56,7 @@
 	<h1 class="page-heading">Make an offer.</h1>
 	{#if loading}<p class="page-intro">Loading this link…</p>
 	{:else if !person}<div class="notice notice-warning">{message}</div>
-	{:else if person.mode !== 'offer' || person.paused || !person.ready}<div class="notice notice-info">{person.name} isn’t taking offers right now. Check back soon.</div>
+	{:else if person.mode === 'fixed' || person.paused || !person.ready}<div class="notice notice-info">{person.name} isn’t taking offers right now. Check back soon.</div>
 	{:else}
 		<p class="page-intro">Name your price for time with {person.name}. They can accept, counter once or decline, and you’ll get an email either way. You only pay if you both agree, after you pick a time.</p>
 		<form class="setup-form" onsubmit={(e) => { e.preventDefault(); submit(); }}>

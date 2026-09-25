@@ -39,6 +39,24 @@ func TestProfileValidationNeverAcceptsClientReadiness(t *testing.T) {
 	}
 }
 
+func TestProfileValidationModes(t *testing.T) {
+	both := Person{Handle: "tomi", Name: "Tomi", Mode: "both", Base30: 1500000, Timezone: "Africa/Lagos"}
+	if err := validatePerson(&both); err != nil {
+		t.Fatalf("fixed price with offers: %v", err)
+	}
+	if both.Base30 != 1500000 {
+		t.Fatal("a seller taking both keeps their fixed price")
+	}
+	noPrice := Person{Handle: "tomi", Name: "Tomi", Mode: "both", Timezone: "Africa/Lagos"}
+	if validatePerson(&noPrice) == nil {
+		t.Fatal("a seller taking both needs a fixed price")
+	}
+	unknown := Person{Handle: "tomi", Name: "Tomi", Mode: "auction", Base30: 1500000, Timezone: "Africa/Lagos"}
+	if validatePerson(&unknown) == nil {
+		t.Fatal("unknown mode was accepted")
+	}
+}
+
 func TestChallengeIDIsPostgresUUID(t *testing.T) {
 	id, err := randomUUID()
 	if err != nil {

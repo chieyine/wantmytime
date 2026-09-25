@@ -125,7 +125,7 @@ func (a *API) createQuote(w http.ResponseWriter, r *http.Request) {
 		problem(w, 409, "SELLER_UNAVAILABLE", "This link is not ready to take bookings.")
 		return
 	}
-	if mode != "fixed" {
+	if mode == "offer" {
 		problem(w, 409, "OFFER_MODE_ONLY", "This link takes offers instead of fixed-price bookings. Send an offer to continue.")
 		return
 	}

@@ -25,7 +25,7 @@ export const GET: RequestHandler = async ({ params, fetch }) => {
 	const esc = (value: string) => value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!);
 	const name = esc(person.name);
 	const publicHandle = esc(person.handle);	const siteHost = esc(new URL(env.PUBLIC_APP_ORIGIN || 'https://wantmytime.com').host);
-	const price = person.mode === 'fixed' && !person.paused
+	const price = person.mode !== 'offer' && !person.paused
 		? formatMoney(Math.round(Number(person.base_30_minor) / 100) * 100, person.currency || 'NGN')
 		: '';
 	const detail = price ? `${esc(price)} / 30 minutes` : 'BOOK TIME ON YOUR TERMS';

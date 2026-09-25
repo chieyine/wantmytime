@@ -70,7 +70,10 @@ Either person picks a new free time (`POST /api/v1/bookings/{id}/reschedules`, c
 - Saying yes = cancelling (S8): the buyer gets a full refund.
 - Saying no = doing nothing. The request never holds the payout and closes itself when the booking time arrives.
 
-### S10. Offers (sellers in "let people make an offer" mode)
+### S10. Offers (sellers in "let people make an offer" or "both" mode)
+
+Under Your link a seller picks one of three modes: a fixed price (`fixed`), offers only (`offer`), or both (`both`). With `both`, the public page leads with the price and "Pick a time", and adds "Make an offer" underneath; fixed-price quotes and offers are both accepted.
+
 
 1. Offer arrives → email "New offer from {buyer}: {amount} for {length}".
 2. `/app/offers/{id}`: accept, counter once, or decline (`POST /api/v1/offers/{id}/accept|counter|decline`, with the version to stop stale answers). The buyer is emailed each time.

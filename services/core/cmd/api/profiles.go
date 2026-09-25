@@ -288,10 +288,10 @@ func validatePerson(p *Person) error {
 	if !validHandle(p.Handle) || !validName(p.Name) {
 		return fmt.Errorf("choose a valid link and display name")
 	}
-	if p.Mode != "fixed" && p.Mode != "offer" {
-		return fmt.Errorf("choose fixed price or offers")
+	if p.Mode != "fixed" && p.Mode != "offer" && p.Mode != "both" {
+		return fmt.Errorf("choose fixed price, offers, or both")
 	}
-	if p.Mode == "fixed" && (p.Base30 < 100 || p.Base30 > 100000000) {
+	if p.Mode != "offer" && (p.Base30 < 100 || p.Base30 > 100000000) {
 		return fmt.Errorf("enter a supported 30 minute price")
 	}
 	if p.Mode == "offer" {

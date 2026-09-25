@@ -703,12 +703,32 @@ input[type=date]:focus-within,input[type=time]:focus-within{outline:3px solid va
 .workspace .setup-form legend {float:left;width:100%}
 .workspace .setup-form legend+* {clear:both}
 
+/* Sellers who take both: the fixed price leads, an offer is the second path. */
+.person-offer-alt {margin-top:28px;padding-top:22px;border-top:1px solid #cfcfc6}
+.person-offer-alt p {font-size:13px;color:#666a63;line-height:1.6;margin:0 0 14px;max-width:450px}
+.person-cta-secondary {display:flex;align-items:center;justify-content:space-between;width:100%;min-height:54px;background:transparent;color:#171817;padding:0 20px;border:1px solid #171817;font-size:12px;font-weight:800;letter-spacing:.06em}
+.person-cta-secondary:hover {background:#e4e2da}
+.choice-row-three {grid-template-columns:repeat(3,minmax(0,1fr))}
+.choice-row-three+.form-note {display:block;margin-top:10px}
+
+/* Display type stays tight but never so tight that letters collide. */
+h1,h2 {letter-spacing:-.035em!important}
+h1 *,h2 * {letter-spacing:-.025em!important}
+h3 {letter-spacing:-.015em!important}
+.person-reviews h2 {letter-spacing:.14em!important}
+.wordmark,.workspace-brand,.person-brand {letter-spacing:-.03em!important}
+.workspace-body strong {letter-spacing:-.02em!important}
+.availability-save-bar strong,.link-editor-status strong {letter-spacing:.08em!important}
+
+/* Tablets: all seven days fit side by side without a sideways scroll. */
+@media(min-width:721px) and (max-width:1000px) {
+  .availability-week {overflow:visible;grid-template-columns:repeat(7,minmax(0,1fr))}
+  .availability-week button {padding:15px 9px 16px}
+}
+
 /* Phones: give the tightly tracked display type and dense blocks room to breathe. */
 @media(max-width:720px) {
-  h1,h2 {letter-spacing:-.03em!important;line-height:1.02!important}
-  h1 *,h2 * {letter-spacing:-.02em!important}
-  h3 {letter-spacing:-.015em!important}
-  .wordmark,.workspace-brand {letter-spacing:-.03em!important}
+  h1,h2 {line-height:1.02!important}
   .page-intro {margin-bottom:34px}
   .setup-form {gap:26px}
   .setup-form>label,.setup-form label:not(.choice-row label) {gap:10px}
@@ -717,12 +737,11 @@ input[type=date]:focus-within,input[type=time]:focus-within{outline:3px solid va
   .brand-method-steps p {line-height:1.6}
   .brand-duration {gap:14px}
   .brand-hero h1 {font-size:clamp(34px,11.6vw,80px)}
-  .workspace-body strong {letter-spacing:-.02em!important}
-  .availability-save-bar strong,.link-editor-status strong {letter-spacing:.08em!important}
   .availability-week {overflow:visible;grid-template-columns:repeat(4,minmax(0,1fr))}
   .availability-week button {min-height:96px;padding:14px 10px}
   .availability-week button:nth-child(-n+4) {border-bottom:1px solid #171817}
   .availability-week button:nth-child(4) {border-right:0}
+  .choice-row-three {grid-template-columns:1fr}
   .link-editor-save {display:flex;gap:14px;padding:10px 0}
   .link-editor-save>span {flex:1;line-height:1.4}
   .link-editor-save .button {width:auto;min-height:44px;padding:0 16px;flex:none}

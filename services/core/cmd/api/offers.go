@@ -92,7 +92,7 @@ func (a *API) createOffer(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "DATABASE_ERROR", "Your offer could not be saved.")
 		return
 	}
-	if mode != "offer" {
+	if mode == "fixed" {
 		problem(w, 409, "OFFER_MODE_DISABLED", "This link is not accepting offers.")
 		return
 	}

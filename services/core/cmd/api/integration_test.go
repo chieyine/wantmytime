@@ -887,6 +887,23 @@ func TestOfferModeSellerRejectsFixedQuotesAndMalformedIDs(t *testing.T) {
 	}
 }
 
+func TestSellerTakingBothAcceptsFixedQuotesAndOffers(t *testing.T) {
+	h := newHarness(t)
+	t.Setenv("LOCAL_PAYMENT_SIMULATOR", "true")
+	s := h.newSeller("both")
+	buyer := h.guestBuyer()
+	buyer.expect(201, "POST", "/api/v1/quotes", map[string]any{"seller": s.handle, "name": "B", "duration_minutes": 30, "starts_at": h.slot(s.handle, 0)}, "Idempotency-Key", idempotencyKey())
+	offerBuyer := h.client(unique("o") + "@buyer.test")
+	offerBuyer.signIn("guest_offer")
+	offerBuyer.expect(201, "POST", "/api/v1/offers", map[string]any{"seller": s.handle, "name": "Ola", "duration_minutes": 30, "amount_minor": 500000}, "Idempotency-Key", idempotencyKey())
+
+	fixed := h.newSeller("fixed")
+	res := offerBuyer.do("POST", "/api/v1/offers", map[string]any{"seller": fixed.handle, "name": "Ola", "duration_minutes": 30, "amount_minor": 500000}, "Idempotency-Key", idempotencyKey())
+	if res.Status != 409 || !strings.Contains(string(res.Body), "OFFER_MODE_DISABLED") {
+		t.Fatalf("offer on fixed-only seller: %d %s", res.Status, res.Body)
+	}
+}
+
 // TestEndpointSmoke calls every route once with valid input and fails on any
 // server error. It exists to catch SQL/parameter-type mistakes that only
 // PostgreSQL can detect.

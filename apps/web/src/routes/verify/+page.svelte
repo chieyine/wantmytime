@@ -31,7 +31,7 @@
 			if (purpose === 'claim') {
 				const raw = sessionStorage.getItem('aside_claim_draft');
 				if (!raw) throw new Error('Your setup details expired. Start again to claim your link.');
-				const draft = JSON.parse(raw) as {handle:string; name:string; identity_url:string; mode:'fixed'|'offer'; base_30_minor:number; durations:number[]; timezone:string; country?:string};
+				const draft = JSON.parse(raw) as {handle:string; name:string; identity_url:string; mode:'fixed'|'offer'|'both'; base_30_minor:number; durations:number[]; timezone:string; country?:string};
 				const profile = {handle:draft.handle, name:draft.name, identity_url:draft.identity_url, mode:draft.mode, base_30_minor:draft.base_30_minor, durations:draft.durations, timezone:draft.timezone, country:draft.country ?? ''};
 				await api('/api/v1/me/link', {method:'POST', body:JSON.stringify(profile)});
 				sessionStorage.removeItem('aside_claim_draft');
