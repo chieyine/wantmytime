@@ -49,7 +49,7 @@ async function removeAvatar(){avatarBusy=true;avatarMessage='';try{const respons
 		<fieldset><legend>Available conversation lengths</legend><div class="duration-row">{#each [15,30,60] as d}<label class:selected={durations.includes(d)}><input type="checkbox" checked={durations.includes(d)} onchange={()=>toggle(d)}/> {d} min</label>{/each}</div></fieldset>
 		<label>Your timezone<select class="field" bind:value={timezone}>{#each timezoneOptions(timezone) as zone}<option value={zone}>{zone}</option>{/each}</select></label>
 		<label class="check-line"><input type="checkbox" bind:checked={paused}/> Pause new booking requests</label>
-		<div class="notice notice-warning">Your public page accepts paid bookings only when its required readiness and provider checks are approved.</div>
+		<div class="notice notice-warning">Paused means your page stays up but nobody can book. Bookings you already have stay in place.</div>
 		<div class="link-editor-save"><span>{dirty?'YOUR PUBLIC PAGE HAS NOT CHANGED YET':'YOUR PUBLIC PAGE MATCHES THIS EDITOR'}</span><button class="button" type="submit" disabled={saving || !dirty || durations.length===0}>{saving?'Saving…':'Save changes'} <span>↗</span></button></div>
 		{#if message && (!dirty || saveState==='error')}<p class:notice-warning={saveState==='error'} class:notice-info={saveState!=='error'} class="notice" aria-live="polite">{message}</p>{/if}
 	</form><div class="link-editor-preview" class:mobile-hidden={activeView==='edit'}><div class="link-editor-preview-head"><p class="eyebrow">Live private preview</p><span>{dirty?'DRAFT / NOT PUBLISHED':'MATCHES PUBLIC PAGE'}</span></div><PublicPersonPage person={previewPerson} preview={true}/></div></div>{/if}

@@ -8,13 +8,13 @@ SELECT q.id, q.seller_id::text AS seller_id, q.buyer_name, q.gross_minor, q.stat
        EXISTS (SELECT 1 FROM seller_payout_accounts spa WHERE spa.seller_id = sp.id)::boolean AS has_payout_account, i.normalized_identifier AS buyer_email
 FROM quotes q
 JOIN seller_profiles sp ON sp.id = q.seller_id
-JOIN user_identities i ON i.user_id = q.buyer_user_id AND i.type = 'email' AND i.verified_at IS NOT NULL
+JOIN user_identities i ON i.user_id = q.buyer_user_id AND i.type = 'email'
 WHERE q.id = sqlc.arg(quote_id) AND q.buyer_user_id = sqlc.arg(buyer_user_id)
 LIMIT 1;
 
 -- name: UpsertPaymentAttempt :one
-INSERT INTO payment_attempts(id, quote_id, provider, environment, merchant_reference, expected_minor, currency, canonical_state, approved_fee_minor, fee_basis_points, channel)
-VALUES (gen_random_uuid(), sqlc.arg(quote_id)::uuid, 'kora', sqlc.arg(environment), sqlc.arg(reference), sqlc.arg(expected_minor), 'NGN', 'initializing', sqlc.arg(approved_fee_minor)::bigint, sqlc.arg(fee_basis_points)::int, sqlc.arg(channel)::text)
+INSERT INTO payment_attempts(id, quote_id, provider, environment, merchant_reference, expected_minor, currency, canonical_state, approved_fee_minor, fee_basis_points, channel, buyer_fee_minor)
+VALUES (gen_random_uuid(), sqlc.arg(quote_id)::uuid, 'kora', sqlc.arg(environment), sqlc.arg(reference), sqlc.arg(expected_minor), 'NGN', 'initializing', sqlc.arg(approved_fee_minor)::bigint, sqlc.arg(fee_basis_points)::int, sqlc.arg(channel)::text, sqlc.arg(buyer_fee_minor)::bigint)
 ON CONFLICT (provider, environment, merchant_reference) DO UPDATE SET updated_at = now()
 RETURNING id, canonical_state, COALESCE(authorization_url, '')::text AS authorization_url, transfer_details, instructions_expire_at,
   COALESCE(approved_fee_minor, 0)::bigint AS approved_fee_minor;

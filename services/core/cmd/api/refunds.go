@@ -26,6 +26,12 @@ func (a *API) createRefund(ctx context.Context, tx pgx.Tx, b store.LockBookingFo
 		amount = b.GrossMinor
 	}
 	platform, seller := refundShares(amount, b.GrossMinor, b.DeductionMinor)
+	// When the seller is at fault and the buyer gets the whole price back,
+	// the transfer fee they paid comes back too, at the platform's cost.
+	if (reason == "seller_cancelled" || reason == "seller_no_show") && amount == b.GrossMinor && b.BuyerFeeMinor > 0 && b.PaymentState == "paid" {
+		amount += b.BuyerFeeMinor
+		platform += b.BuyerFeeMinor
+	}
 	state := "pending_approval"
 	var note *string
 	switch {

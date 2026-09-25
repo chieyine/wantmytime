@@ -251,7 +251,7 @@ LEFT JOIN seller_payouts po ON po.id = n.reference_id AND po.booking_id = b.id
 JOIN seller_profiles sp ON sp.id = b.seller_id
 JOIN users owner ON owner.id = sp.user_id
 JOIN users recipient ON recipient.id = n.recipient_user_id AND recipient.status = 'active'
-JOIN user_identities identity ON identity.user_id = recipient.id AND identity.type = 'email' AND identity.verified_at IS NOT NULL
+JOIN user_identities identity ON identity.user_id = recipient.id AND identity.type = 'email'
 LEFT JOIN payment_allocations pa ON pa.booking_id = b.id
 WHERE n.id = $1 AND n.state = 'processing' AND (recipient.id = sp.user_id OR recipient.id = b.buyer_user_id)
 LIMIT 1
@@ -301,6 +301,7 @@ type NotificationContextRow struct {
 	IssueResolution        string
 }
 
+// Buyers who paid without confirming their email still get their booking emails.
 func (q *Queries) NotificationContext(ctx context.Context, id string) (NotificationContextRow, error) {
 	row := q.db.QueryRow(ctx, notificationContext, id)
 	var i NotificationContextRow
@@ -376,7 +377,7 @@ JOIN offers o ON o.id = n.offer_id
 JOIN seller_profiles sp ON sp.id = o.seller_id
 JOIN users owner ON owner.id = sp.user_id
 JOIN users recipient ON recipient.id = n.recipient_user_id AND recipient.status = 'active'
-JOIN user_identities identity ON identity.user_id = recipient.id AND identity.type = 'email' AND identity.verified_at IS NOT NULL
+JOIN user_identities identity ON identity.user_id = recipient.id AND identity.type = 'email'
 LEFT JOIN LATERAL (SELECT amount_minor, actor FROM offer_versions WHERE offer_id = o.id ORDER BY version DESC LIMIT 1) v ON true
 WHERE n.id = $1 AND n.state = 'processing' AND (recipient.id = sp.user_id OR recipient.id = o.buyer_user_id)
 LIMIT 1
@@ -401,6 +402,7 @@ type OfferNotificationContextRow struct {
 	AmountActor       string
 }
 
+// Buyers who paid without confirming their email still get their booking emails.
 func (q *Queries) OfferNotificationContext(ctx context.Context, id string) (OfferNotificationContextRow, error) {
 	row := q.db.QueryRow(ctx, offerNotificationContext, id)
 	var i OfferNotificationContextRow

@@ -147,8 +147,8 @@
 <svelte:head><title>Your time — WantMyTime</title></svelte:head>
 <section class={inWorkspace ? 'form-page app-page workspace-booking-detail' : 'form-page'}>
 	<a class="back-link" href={backHref}>← Bookings</a>
-	<p class="eyebrow">Your time together</p>
-	<h1 class="page-heading">{loading ? 'Loading…' : !booking ? 'Booking unavailable.' : booking.state === 'completed' ? 'This time is complete.' : upcoming ? 'It’s in the calendar.' : booking.state === 'confirmed' ? 'This time has passed.' : booking.state === 'cancelled' ? 'This booking was cancelled.' : 'This booking was missed.'}</h1>
+	<p class="eyebrow">Booked</p>
+	<h1 class="page-heading">{loading ? 'Loading…' : !booking ? 'Booking unavailable.' : booking.state === 'completed' ? 'This time is complete.' : upcoming ? 'You’re booked.' : booking.state === 'confirmed' ? 'This time has passed.' : booking.state === 'cancelled' ? 'This booking was cancelled.' : 'This booking was missed.'}</h1>
 
 	{#if loading}
 		<p class="page-intro">Loading your private booking details…</p>
@@ -160,7 +160,7 @@
 		<div class="booking-detail-priority">
 			<span>{(stateLabels[booking.state] ?? booking.state).toUpperCase()} · {(paymentLabels[booking.payment_state] ?? booking.payment_state).toUpperCase()}</span>
 			<strong>{booking.role === 'seller' && upcoming && !booking.meeting_url ? 'ADD THE PRIVATE MEETING LINK' : booking.role === 'seller' ? 'MANAGE THIS BOOKING' : 'YOUR BOOKING DETAILS'}</strong>
-			<p>{booking.role === 'seller' && upcoming && !booking.meeting_url ? `Due by ${dateLabel(booking.meeting_deadline)}. The buyer sees it when you save it.` : 'Use this private page for the time, meeting details and changes.'}</p>
+			<p>{booking.role === 'seller' && upcoming && !booking.meeting_url ? `Due by ${dateLabel(booking.meeting_deadline)}. The buyer sees it when you save it.` : 'Everything about this call lives here: the time, the meeting link and any changes.'}</p>
 		</div>
 		<div class="appointment-slip">
 			<div><small>WITH</small><strong>{booking.role === 'seller' ? booking.buyer : booking.seller_name}</strong></div>
@@ -176,7 +176,7 @@
 		{/if}
 
 		{#if booking.payment_state === 'paid' || booking.payment_state.includes('refunded')}<a class="button button-secondary" href={`/booking/${encodeURIComponent(booking.id)}/receipt`}>View payment receipt ↗</a>{/if}
-		{#if booking.payment_state === 'simulated'}<div class="notice notice-warning">Development booking only. No money was collected, and no seller payout was created.</div>{/if}
+		{#if booking.payment_state === 'simulated'}<div class="notice notice-warning">Test booking: no money moved.</div>{/if}
 
 		<div class="setup-form">
 			{#if booking.state === 'confirmed' || booking.state === 'completed'}<a class="button button-secondary" href={`/api/v1/bookings/${encodeURIComponent(booking.id)}/calendar`}>Add to calendar ↗</a>{/if}

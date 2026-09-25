@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -30,9 +31,18 @@ type API struct {
 	mailCapture func(emailMessage)
 	// calTokens caches Google access tokens per seller.
 	calTokens accessTokens
-	logger    *slog.Logger
-	reporter  *observe.Reporter
-	metrics   *observe.Metrics
+	// redis shares rate-limit counts across API instances (nil: local only).
+	redis *redisClient
+	// rateLimitScale multiplies every rate limit (integration tests only).
+	rateLimitScale int
+	// media stores profile photos in object storage (nil: in PostgreSQL).
+	media *objectStore
+	// retentionRan limits the retention sweep to once an hour per instance.
+	retentionMu  sync.Mutex
+	retentionRan time.Time
+	logger       *slog.Logger
+	reporter     *observe.Reporter
+	metrics      *observe.Metrics
 }
 
 // log returns the configured structured logger (the default logger in tests).
@@ -84,6 +94,18 @@ func main() {
 		return
 	}
 	env := envOr("APP_ENV", "local")
+	if env == "production" {
+		problems, warnings := productionConfigProblems(envLookup)
+		for _, w := range warnings {
+			slog.Warn("configuration", "warning", w)
+		}
+		if len(problems) > 0 {
+			for _, p := range problems {
+				slog.Error("configuration", "problem", p)
+			}
+			log.Fatalf("refusing to start: %d configuration problem(s); see the log lines above and docs/DEPLOYMENT.md", len(problems))
+		}
+	}
 	sessionSecret := os.Getenv("SESSION_SECRET")
 	if len(sessionSecret) < 32 {
 		if env == "production" {
@@ -101,6 +123,21 @@ func main() {
 	}
 	defer reporter.Close(5 * time.Second)
 	a := &API{db: db, env: env, sessionKey: []byte(sessionSecret), logger: logger, reporter: reporter, metrics: observe.NewMetrics()}
+	if a.media, err = newObjectStoreFromEnv(env); err != nil {
+		log.Fatal(err)
+	}
+	if raw := os.Getenv("REDIS_URL"); raw != "" {
+		rc, err := newRedisClient(raw)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		if err = rc.ping(pingCtx); err != nil {
+			logger.Error("Redis did not answer; rate limits are local to this instance until it does", "error", err.Error())
+		}
+		cancel()
+		a.redis = rc
+	}
 	a.metrics.AddGauges(a.operationalGauges)
 	go a.providerEventWorker(ctx)
 	go a.runWatchdog(ctx)
@@ -113,7 +150,7 @@ func main() {
 		go a.runCalendarWorker(ctx)
 	}
 	server := &http.Server{Addr: addr, Handler: a.routes(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 20 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
-	logger.Info("API listening", "addr", addr, "env", env, "provider_checkout_enabled", a.providerCheckoutConfigured(), "error_reporting", reporter != nil, "metrics_enabled", os.Getenv("METRICS_TOKEN") != "")
+	logger.Info("API listening", "addr", addr, "env", env, "provider_checkout_enabled", a.providerCheckoutConfigured(), "error_reporting", reporter != nil, "metrics_enabled", os.Getenv("METRICS_TOKEN") != "", "shared_rate_limits", a.redis != nil, "object_storage", a.media != nil)
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- server.ListenAndServe() }()
 	select {

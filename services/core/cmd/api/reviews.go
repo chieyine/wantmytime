@@ -256,6 +256,9 @@ func (a *API) runLifecycleWorker(ctx context.Context) {
 		if payoutErr := a.processPayouts(ctx); err == nil {
 			err = payoutErr
 		}
+		if retentionErr := a.maybeApplyRetention(ctx, time.Now()); err == nil {
+			err = retentionErr
+		}
 		if err != nil && !errors.Is(err, context.Canceled) {
 			a.log().ErrorContext(ctx, "lifecycle worker cycle failed", "error", err.Error())
 		}

@@ -14,15 +14,17 @@
 	let windowCount = $state<number | null>(null);
 	let profileReady = $state<boolean | null>(null);
 	let profilePaused = $state(false);
-	let collectionEnabled = $state<boolean | null>(null);
+	let hasBank = $state<boolean | null>(null);
+	let onTheWay = $state<number | null>(null);
 	let overviewLoading = $state(true);
 	let overviewError = $state(false);
 	let link = $derived(account.handle ? `${(env.PUBLIC_APP_ORIGIN || (typeof window === 'undefined' ? '' : window.location.origin)).replace(/\/$/, '')}/${account.handle}` : 'No link claimed yet');
 	let nextBooking = $derived(bookings.filter((booking) => booking.seller === account.handle && new Date(booking.starts_at).getTime() >= Date.now() && booking.state === 'confirmed').sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime())[0]);
 	let pendingOffers = $derived(offers.filter((offer) => offer.role === 'seller' && offer.state === 'pending' && new Date(offer.expires_at).getTime() > Date.now()));
 	let nextOffer = $derived([...pendingOffers].sort((a, b) => new Date(a.expires_at).getTime() - new Date(b.expires_at).getTime())[0]);
-	let nextSetupHref = $derived(!account.handle ? '/claim' : windowCount === 0 ? '/app/availability' : profilePaused ? '/app/link' : profileReady === false ? '/app/onboarding' : collectionEnabled === false ? '/app/settings/payouts' : '/app/link');
-	let nextSetupLabel = $derived(!account.handle ? 'CLAIM YOUR LINK' : windowCount === 0 ? 'SET YOUR HOURS' : profilePaused ? 'RESUME YOUR LINK' : profileReady === false ? 'COMPLETE PROFILE SETUP' : collectionEnabled === false ? 'VIEW PAYMENT READINESS' : 'MANAGE YOUR LINK');
+	let open = $derived(!!account.handle && (windowCount ?? 0) > 0 && hasBank === true && profileReady === true && !profilePaused);
+	let nextSetupHref = $derived(!account.handle ? '/claim' : windowCount === 0 ? '/app/availability' : hasBank === false ? '/app/settings/payouts' : profilePaused ? '/app/link' : '/app/share');
+	let nextSetupLabel = $derived(!account.handle ? 'CLAIM YOUR LINK' : windowCount === 0 ? 'SET YOUR HOURS' : hasBank === false ? 'ADD YOUR BANK ACCOUNT' : profilePaused ? 'TURN BOOKINGS BACK ON' : 'SHARE YOUR LINK');
 	onMount(async () => {
 		if (!account.handle) { overviewLoading = false; return; }
 		const results = await Promise.allSettled([
@@ -30,13 +32,15 @@
 			api<{ windows: unknown[] }>('/api/v1/me/availability'),
 			api<{ bookings: Booking[] }>('/api/v1/me/bookings'),
 			api<{ offers: Offer[] }>('/api/v1/me/offers'),
-			api<{ payment_collection_enabled: boolean }>('/api/v1/me/settlements')
+			api<{ account: unknown | null }>('/api/v1/me/payout-account'),
+			api<{ upcoming_minor: number }>('/api/v1/me/payouts')
 		]);
 		if (results[0].status === 'fulfilled') { profileReady = results[0].value.ready; profilePaused = results[0].value.paused; }
 		if (results[1].status === 'fulfilled') windowCount = results[1].value.windows.length;
 		if (results[2].status === 'fulfilled') bookings = results[2].value.bookings;
 		if (results[3].status === 'fulfilled') offers = results[3].value.offers;
-		if (results[4].status === 'fulfilled') collectionEnabled = results[4].value.payment_collection_enabled;
+		if (results[4].status === 'fulfilled') hasBank = results[4].value.account !== null;
+		if (results[5].status === 'fulfilled') onTheWay = results[5].value.upcoming_minor;
 		overviewError = results.some((result) => result.status === 'rejected');
 		overviewLoading = false;
 	});
@@ -59,21 +63,21 @@
 	<header class="workspace-overview-head">
 		<p class="workspace-kicker">OVERVIEW <span>01 / 08</span></p>
 		<h1>YOUR TIME,<br /><em>{account.name?.trim().split(' ')[0] || 'YOUR SPACE'}.</em></h1>
-		<p>One place to manage the link, the hours and the conversations you choose to take.</p>
+		<p>Your link, your hours, your bookings and your money, all in one place.</p>
 	</header>
 	<section class="workspace-link-panel" aria-labelledby="workspace-link-title">
-		<div><p class="workspace-kicker">YOUR PUBLIC LINK <span>01</span></p><h2 id="workspace-link-title">{link}</h2></div>
+		<div><p class="workspace-kicker">YOUR LINK <span>01</span></p><h2 id="workspace-link-title">{link}</h2></div>
 		<div class="workspace-link-actions">{#if account.handle}<button type="button" class="workspace-action" onclick={copy}>{copied ? 'COPIED' : 'COPY LINK'} <span aria-hidden="true">↗</span></button><a class="workspace-action workspace-action-outline" href={`/${account.handle}`}>VIEW PAGE <span aria-hidden="true">↗</span></a>{:else}<a class="workspace-action" href="/claim">CLAIM YOUR LINK <span aria-hidden="true">↗</span></a>{/if}</div>
 		{#if copyError}<p class="workspace-inline-error" role="alert">{copyError}</p>{/if}
 	</section>
-	{#if overviewError}<p class="notice notice-warning workspace-overview-warning" role="status">Some live details could not be loaded. Open a section to see its latest records.</p>{/if}
+	{#if overviewError}<p class="notice notice-warning workspace-overview-warning" role="status">Some details didn’t load. Refresh, or open a section directly.</p>{/if}
 	<div class="workspace-overview-grid">
 		<section class="workspace-readiness" aria-labelledby="workspace-readiness-title">
-			<p class="workspace-kicker">GET READY TO BOOK <span>02</span></p>
-			<h2 id="workspace-readiness-title">{profileReady && !profilePaused && collectionEnabled && (windowCount ?? 0) > 0 ? 'CORE CHECKS COMPLETE.' : 'OPEN WHEN YOU ARE READY.'}</h2>
-			<ol><li><span>01</span><span>Public link <b>{account.handle ? 'Claimed' : 'To do'}</b></span></li><li><span>02</span><span>Weekly hours <b>{!account.handle ? 'After link' : windowCount === null ? (overviewLoading ? 'Loading' : 'Unavailable') : windowCount > 0 ? `${windowCount} ${windowCount === 1 ? 'window' : 'windows'}` : 'To do'}</b></span></li><li><span>03</span><span>Profile checks <b>{!account.handle ? 'After link' : profileReady === null ? (overviewLoading ? 'Loading' : 'Unavailable') : profileReady ? (profilePaused ? 'Paused by you' : 'Ready') : 'Not approved'}</b></span></li><li><span>04</span><span>Live payment collection <b>{!account.handle ? 'After link' : collectionEnabled === null ? (overviewLoading ? 'Loading' : 'Unavailable') : collectionEnabled ? 'Enabled' : 'Disabled'}</b></span></li></ol>
+			<p class="workspace-kicker">{open ? 'STATUS' : 'SETUP'} <span>02</span></p>
+			<h2 id="workspace-readiness-title">{open ? 'YOU’RE OPEN FOR BOOKINGS.' : profilePaused ? 'BOOKINGS ARE PAUSED.' : 'A FEW STEPS FROM YOUR FIRST BOOKING.'}</h2>
+			<ol><li><span>01</span><span>Your link <b>{account.handle ? 'Live' : 'To do'}</b></span></li><li><span>02</span><span>Your hours <b>{!account.handle ? 'After your link' : windowCount === null ? (overviewLoading ? 'Checking' : '—') : windowCount > 0 ? 'Set' : 'To do'}</b></span></li><li><span>03</span><span>Bank account for payouts <b>{!account.handle ? 'After your link' : hasBank === null ? (overviewLoading ? 'Checking' : '—') : hasBank ? 'Added' : 'To do'}</b></span></li>{#if account.handle && profileReady === false && hasBank}<li><span>04</span><span>Bookings are on hold on our side <b>Contact us</b></span></li>{/if}</ol>
 			<a href={nextSetupHref}>{nextSetupLabel} <span aria-hidden="true">↗</span></a>
 		</section>
-		<aside class="workspace-side-note"><p class="workspace-kicker">UP NEXT <span>03</span></p><a href={nextBooking ? `/app/bookings/${encodeURIComponent(nextBooking.id)}` : '/app/bookings'}><span>NEXT BOOKING</span><strong>{overviewLoading ? 'Loading your bookings…' : nextBooking ? `${nextBooking.buyer} · ${dateLabel(nextBooking.starts_at)}` : 'No upcoming booking in recent records'}</strong><b aria-hidden="true">↗</b></a><a href={nextOffer ? `/app/offers/${encodeURIComponent(nextOffer.id)}` : '/app/offers'}><span>OFFERS TO ANSWER</span><strong>{overviewLoading ? 'Loading your offers…' : nextOffer ? `${nextOffer.buyer_name} · ${formatNaira(Number(nextOffer.amount_minor))}` : 'No pending offer in recent records'}</strong><b aria-hidden="true">↗</b></a><div><span>PAYMENT STATUS</span><p>{collectionEnabled === null ? 'Checking provider availability.' : collectionEnabled ? 'Live payment collection is enabled by provider configuration.' : 'Live payment collection remains disabled until provider setup is approved.'}</p><a href="/app/settings/payouts">VIEW READINESS ↗</a></div></aside>
+		<aside class="workspace-side-note"><p class="workspace-kicker">UP NEXT <span>03</span></p><a href={nextBooking ? `/app/bookings/${encodeURIComponent(nextBooking.id)}` : '/app/bookings'}><span>NEXT BOOKING</span><strong>{overviewLoading ? 'Checking…' : nextBooking ? `${nextBooking.buyer} · ${dateLabel(nextBooking.starts_at)}` : 'Nothing booked yet'}</strong><b aria-hidden="true">↗</b></a><a href={nextOffer ? `/app/offers/${encodeURIComponent(nextOffer.id)}` : '/app/offers'}><span>OFFERS TO ANSWER</span><strong>{overviewLoading ? 'Checking…' : nextOffer ? `${nextOffer.buyer_name} · ${formatNaira(Number(nextOffer.amount_minor))}` : 'No offers waiting'}</strong><b aria-hidden="true">↗</b></a><a href="/app/money"><span>ON THE WAY TO YOUR BANK</span><strong>{onTheWay === null ? (overviewLoading ? 'Checking…' : '—') : formatNaira(onTheWay)}</strong><b aria-hidden="true">↗</b></a></aside>
 	</div>
 </section>

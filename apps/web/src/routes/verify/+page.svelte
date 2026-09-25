@@ -35,17 +35,17 @@
 				const profile = {handle:draft.handle, name:draft.name, identity_url:draft.identity_url, mode:draft.mode, base_30_minor:draft.base_30_minor, durations:draft.durations, timezone:draft.timezone};
 				await api('/api/v1/me/link', {method:'POST', body:JSON.stringify(profile)});
 				sessionStorage.removeItem('aside_claim_draft');
-				window.location.href = '/' + encodeURIComponent(draft.handle);
+				window.location.href = '/app/onboarding';
 			} else {const target=next?new URL(next,window.location.origin):new URL('/app',window.location.origin);window.location.href=target.origin===window.location.origin?target.pathname+target.search+target.hash:'/app'}
-		} catch (error) { message = error instanceof Error ? error.message : 'We could not verify that code.'; }
+		} catch (error) { message = error instanceof Error ? error.message : 'That code didn’t work. Check it and try again.'; }
 		finally { busy = false; }
 	}
 </script>
 <svelte:head><title>Verify your email — WantMyTime</title></svelte:head>
-<section class="form-page"><a class="back-link" href="/login">← Back</a><p class="eyebrow">Email verification</p><h1 class="page-heading">Enter your code.</h1><p class="page-intro">Use the eight digit code sent to your email. It expires in ten minutes.</p>
+<section class="form-page">{#if purpose === 'login' || purpose === 'access'}<a class="back-link" href="/login">← Back</a>{:else}<button type="button" class="back-link back-button" onclick={() => history.back()}>← Back</button>{/if}<p class="eyebrow">{purpose === 'claim' ? 'Your link · step 2 of 2' : 'One quick check'}</p><h1 class="page-heading">Check your email.</h1><p class="page-intro">We sent you an 8-digit code. It works for 10 minutes. Can’t find it? Look in spam or promotions.</p>
 	<form class="setup-form" onsubmit={(e)=>{e.preventDefault();verify()}}>
-		<label>Verification code<input class="field" bind:value={code} inputmode="numeric" autocomplete="one-time-code" minlength="8" maxlength="8" pattern="[0-9]{8}" required /></label>
+		<label>Your code<input class="field code-field" bind:value={code} oninput={() => { code = code.replace(/\D/g, '').slice(0, 8); if (code.length === 8 && !busy) verify(); }} inputmode="numeric" autocomplete="one-time-code" minlength="8" maxlength="8" pattern="[0-9]{8}" required placeholder="12345678" /></label>
 		{#if message}<p class="notice notice-warning" aria-live="polite">{message}</p>{/if}
-		<button class="button" type="submit" disabled={busy || !challenge}>{busy ? 'Verifying…' : 'Verify email'} <span>↗</span></button>
+		<button class="button" type="submit" disabled={busy || !challenge}>{busy ? 'Checking…' : 'Continue'} <span aria-hidden="true">↗</span></button>
 	</form>
 </section>

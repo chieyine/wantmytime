@@ -15,6 +15,7 @@
 		{ value: 0, short: 'SUN', name: 'Sunday' }
 	];
 	let windows = $state<WindowRule[]>([]);
+	let starterHours = $state(false);
 	let overrides = $state<Override[]>([]);
 	let selectedDay = $state(1);
 	let overrideDate = $state('');
@@ -55,6 +56,11 @@
 			horizon = data.booking_horizon_days;
 			buffer = data.buffer_minutes;
 			savedFingerprint = JSON.stringify({ windows, timezone: data.timezone, notice: data.minimum_notice_minutes, horizon: data.booking_horizon_days, buffer: data.buffer_minutes });
+			// First visit: start from weekdays 9 to 5 so there is something to save, not seven empty days.
+			if (windows.length === 0) {
+				windows = [1, 2, 3, 4, 5].map((weekday) => ({ weekday, start: '09:00', end: '17:00' }));
+				starterHours = true;
+			}
 			loaded = true;
 		} catch (error) {
 			message = error instanceof Error ? error.message : 'Availability could not be loaded.';
@@ -87,6 +93,7 @@
 			await api('/api/v1/me/availability', { method: 'PUT', body: JSON.stringify(payload) });
 			savedFingerprint = submittedFingerprint;
 			saveState = 'saved';
+			starterHours = false;
 			message = 'Your hours are saved.';
 		} catch (error) {
 			saveState = 'error';
@@ -130,7 +137,8 @@
 	<a class="back-link" href="/app">← Overview</a>
 	<p class="eyebrow">Availability / your hours</p>
 	<h1 class="page-heading">MAKE TIME<br />ON YOUR TERMS.</h1>
-	<p class="page-intro">Set a weekly rhythm, then close individual dates whenever you need to.</p>
+	<p class="page-intro">Set the hours people can book each week. Close a single date whenever you need to.</p>
+	{#if starterHours}<div class="notice notice-info">We’ve filled in weekdays, 9am to 5pm, to get you started. Change anything you like, then save.</div>{/if}
 	{#if loading}<p class="page-intro">Loading your saved hours…</p>
 	{:else if !loaded}<div class="notice notice-warning" role="alert">{message}</div><button class="button button-secondary" onclick={() => window.location.reload()}>Try loading again</button>
 	{:else}
@@ -153,6 +161,6 @@
 			{#if message && (!dirty || saveState === 'error')}<p class:notice-warning={saveState === 'error'} class:notice-info={saveState !== 'error'} class="notice" aria-live="polite">{message}</p>{/if}
 		</form>
 		<section class="availability-overrides"><div><p class="workspace-kicker">03 / DATE EXCEPTIONS</p><h2>Close a particular day.</h2><p>Your weekly rhythm stays saved. Closing a date changes only that day.</p></div><div><label>DATE TO CLOSE<input class="field" type="date" bind:value={overrideDate} /></label><button class="button button-secondary" type="button" onclick={closeDate} disabled={!overrideDate || overrideBusy}>CLOSE DATE ↗</button>{#if overrideMessage}<p class="notice notice-info" aria-live="polite">{overrideMessage}</p>{/if}{#each overrides as item}<div class="availability-override-row"><span>{item.date}</span><strong>CLOSED</strong><button type="button" onclick={() => removeOverride(item.date)} disabled={overrideBusy}>RESTORE HOURS ↗</button></div>{/each}</div></section>
-		<div class="notice notice-warning">Saved hours do not make this link bookable by themselves. Booking stays off until readiness and payment setup are approved.</div>
+		<div class="notice notice-warning">People can book any free slot inside these hours, minus your notice and buffer times.</div>
 	{/if}
 </section>

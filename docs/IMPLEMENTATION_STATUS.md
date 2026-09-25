@@ -20,6 +20,24 @@ Statuses distinguish working code from external approval and unbuilt scope. “L
 | 11 — Production readiness | incomplete; code fixes not runtime-verified in this pass | API startup no longer runs migrations automatically; Compose has a dedicated migration job and the API supports an explicit `migrate` command. Migrations 008–011, guest scopes, provider webhook intake, and CSV reconciliation need runtime verification against a clean database. No provider sandbox credentials, owner/provider approvals, backup restore, browser accessibility, production deployment, full operations MFA or settlement reconciliation evidence are available. |
 | 12 — Private beta | blocked by owner/external authorization | Requires legal/commercial approval, approved merchant/payment setup, credentials, verified domain, production infrastructure, operational support and explicit deployment/collection approval. |
 
+## Phase 7 — design, accessibility and funnels (2026-09-25)
+
+| Area | Status |
+|---|---|
+| Accessibility | axe-core (WCAG 2.1 A/AA plus best practice) run on 40 pages at desktop and phone width as a seller, a buyer, an operator and a visitor: 51 page views failed colour contrast before; none fail now. Skip link, focus rings on wrapped and date inputs, keyboard order checked on the home, profile, booking and login pages. |
+| Visual | Every page screenshotted at 1280px and 390px. Fixed: the bookings heading pushing the phone layout 32px sideways, the workspace rail label being cut off, dates running into labels on the people and sessions pages, and terms copy that still described the old "people you already know" positioning. No page scrolls sideways. |
+| Funnels | Buyer booking funnel and seller setup funnel in Operations → Growth, 7/30/90 days, built from records except the first three browser steps. Tested. |
+
+## Phase 6 — hardening (2026-09-24)
+
+| Area | Status |
+|---|---|
+| Shared rate limits | Implemented and tested: Redis-backed fixed windows across instances, hashed keys, local fallback, route-level limits for sign-in, checkout, uploads, public reads and all writes; metrics counters. |
+| Security headers | Implemented and browser-checked: nonce-based CSP on every page, HSTS in production, frame, referrer, permissions and opener policies; API `default-src 'none'`. No CSP violations on the public, app and settings pages in Chromium. |
+| Cloudflare R2 | Implemented and tested against a fake S3 endpoint; request signing matches botocore's reference output. Not yet run against a real R2 bucket. |
+| Production configuration | Start-up refuses weak, placeholder, reused or missing secrets and leftover test switches. |
+| Data rights (NDPA) | Data export, account deletion with safety checks, 180-day link hold, hourly retention sweep and a rewritten privacy notice (needs legal review and company details). |
+
 ## Verification evidence
 
 - `cd services/core && GOCACHE=/private/tmp/aside-go-cache GOPROXY=off go test ./...` — passed, including the RFC 6238 TOTP vector.

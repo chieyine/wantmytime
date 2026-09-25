@@ -222,7 +222,7 @@ func (a *API) verifyChallenge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var userID string
-	e = tx.QueryRow(r.Context(), `SELECT user_id::text FROM user_identities WHERE type='email' AND normalized_identifier=$1 AND verified_at IS NOT NULL`, email).Scan(&userID)
+	e = tx.QueryRow(r.Context(), `SELECT user_id::text FROM user_identities WHERE type='email' AND normalized_identifier=$1`, email).Scan(&userID)
 	if errors.Is(e, pgx.ErrNoRows) {
 		e = tx.QueryRow(r.Context(), `INSERT INTO users(id,display_name) VALUES(gen_random_uuid(),split_part($1,'@',1)) RETURNING id::text`, email).Scan(&userID)
 	}
@@ -414,7 +414,7 @@ func (a *API) buyerActor(w http.ResponseWriter, r *http.Request) (user, bool, bo
 	}
 	var u user
 	var scopeJSON []byte
-	err = a.db.QueryRow(r.Context(), `SELECT u.id::text,i.normalized_identifier,s.guest_scope FROM sessions s JOIN users u ON u.id=s.user_id JOIN user_identities i ON i.user_id=u.id AND i.type='email' AND i.verified_at IS NOT NULL WHERE s.token_hash=$1 AND s.guest_scope IS NOT NULL AND s.revoked_at IS NULL AND s.expires_at>now() AND u.status='active' LIMIT 1`, digest(cookie.Value)).Scan(&u.ID, &u.Email, &scopeJSON)
+	err = a.db.QueryRow(r.Context(), `SELECT u.id::text,i.normalized_identifier,s.guest_scope FROM sessions s JOIN users u ON u.id=s.user_id JOIN user_identities i ON i.user_id=u.id AND i.type='email' AND (i.verified_at IS NOT NULL OR s.guest_scope->>'unverified'='true') WHERE s.token_hash=$1 AND s.guest_scope IS NOT NULL AND s.revoked_at IS NULL AND s.expires_at>now() AND u.status='active' LIMIT 1`, digest(cookie.Value)).Scan(&u.ID, &u.Email, &scopeJSON)
 	if err != nil {
 		problem(w, 401, "AUTH_REQUIRED", "Verify your email to continue.")
 		return user{}, false, false, guestSessionScope{}

@@ -56,12 +56,16 @@ Every journal balances. After a booking is fully settled, the seller's `seller_p
 
 For gross `G` in minor units and approved fee rate `b` basis points, `0 <= b <= 500`, `F=floor(G*b/10000)`, `S=G-F`, and `G=F+S`. Processor cost must fit within the approved deduction (or match the approved international-card schedule, which the platform absorbs). Never reduce seller entitlement or add an undisclosed buyer fee.
 
+**Bank transfer fee (buyer pays).** The buyer pays the provider's charge on top of the price. For price `G`, the fee `f` is the smallest amount with `cost(G+f) <= f` under the first approved channel schedule, so the charge covers its own processing cost. As on most platforms, the profile and booking pages show only the price; the fee appears at the payment step, in the amount to transfer and a line saying how much of it is the transfer fee. `payment_attempts.expected_minor = G + f` and `buyer_fee_minor = f`. The allocation still uses `G` as gross: platform fee `F` and seller entitlement `S` are computed on the price alone, so the seller keeps 95% of the price. The journal credits `platform_fee_revenue` with `F + f`, and the processor cost must fit within `F + f`.
+
 ## Refunds
 
 **When refunds happen:**
 - A buyer cancels: the booking's frozen policy decides the amount.
 - A seller cancels, or a seller no-show stands: the buyer gets a full refund.
 - An operator resolves a reported problem with a refund, or refunds a booking directly: any amount up to the price, with a reason, audited.
+
+**Transfer fee on refunds:** a buyer cancellation refunds the price under the policy; the transfer fee is not returned. A seller cancellation or a seller no-show that stands returns everything, fee included, and the platform bears the fee.
 
 **Shares:** each refund `R` is split in proportion to the original charge: platform share `floor(R*F/G)`, seller share the rest. One live refund is allowed per booking. The provider does not return its processing fee on refunds; the platform absorbs it.
 

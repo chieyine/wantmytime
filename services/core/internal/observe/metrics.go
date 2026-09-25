@@ -23,6 +23,7 @@ type Metrics struct {
 	buckets  []float64
 	hist     map[string]*histogram // key: route
 	gauges   []GaugeFunc
+	counters map[string]float64 // key: family|label value
 }
 
 // Gauge is one sample of a gauge family.
@@ -47,7 +48,28 @@ func NewMetrics() *Metrics {
 		requests: map[string]float64{},
 		buckets:  []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
 		hist:     map[string]*histogram{},
+		counters: map[string]float64{},
 	}
+}
+
+// counterHelp lists the application counters Count accepts, with the label
+// each one carries.
+var counterHelp = map[string][2]string{
+	"aside_rate_limited_total":            {"Requests refused by a rate limit.", "limiter"},
+	"aside_rate_limit_redis_errors_total": {"Shared rate-limit checks that fell back to the local limit because Redis failed.", "limiter"},
+}
+
+// Count adds one to an application counter. Unknown families are ignored.
+func (m *Metrics) Count(family, label string) {
+	if m == nil {
+		return
+	}
+	if _, ok := counterHelp[family]; !ok {
+		return
+	}
+	m.mu.Lock()
+	m.counters[family+"|"+label]++
+	m.mu.Unlock()
 }
 
 // AddGauges registers a scrape-time gauge source.
@@ -136,6 +158,25 @@ func (m *Metrics) Write(ctx context.Context, w io.Writer) error {
 		fmt.Fprintf(w, "aside_http_request_duration_seconds_bucket%s %s\n", labelString(map[string]string{"route": route, "le": "+Inf"}), formatFloat(h.count))
 		fmt.Fprintf(w, "aside_http_request_duration_seconds_sum%s %s\n", labelString(map[string]string{"route": route}), formatFloat(h.sum))
 		fmt.Fprintf(w, "aside_http_request_duration_seconds_count%s %s\n", labelString(map[string]string{"route": route}), formatFloat(h.count))
+	}
+	families := make([]string, 0, len(counterHelp))
+	for f := range counterHelp {
+		families = append(families, f)
+	}
+	sort.Strings(families)
+	counterKeys := make([]string, 0, len(m.counters))
+	for k := range m.counters {
+		counterKeys = append(counterKeys, k)
+	}
+	sort.Strings(counterKeys)
+	for _, f := range families {
+		fmt.Fprintf(w, "# HELP %s %s\n# TYPE %s counter\n", f, counterHelp[f][0], f)
+		for _, k := range counterKeys {
+			p := strings.SplitN(k, "|", 2)
+			if p[0] == f {
+				fmt.Fprintf(w, "%s%s %s\n", f, labelString(map[string]string{counterHelp[f][1]: p[1]}), formatFloat(m.counters[k]))
+			}
+		}
 	}
 	gauges := append([]GaugeFunc(nil), m.gauges...)
 	m.mu.Unlock()

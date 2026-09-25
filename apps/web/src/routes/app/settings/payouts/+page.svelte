@@ -1,18 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
-	import { formatNaira } from '$lib/money';
 
 	type Account = { bank_name: string; account_last4: string; account_name: string; verified_at: string; usable_from: string; in_safety_hold: boolean };
-	type Payout = { id: string; booking_id: string; buyer_name: string; state: string; entitlement_minor: number; amount_minor: number | null; transfer_minor?: number; recovery_minor: number; release_at: string; paid_at: string | null; bank_name: string; account_last4: string; hold: string; hold_text?: string; note?: string };
 	type Bank = { code: string; name: string };
 
 	let account = $state<Account | null>(null);
 	let delayMinutes = $state(180);
 	let windowMinutes = $state(120);
-	let payouts = $state<Payout[]>([]);
-	let upcoming = $state(0);
-	let paid = $state(0);
 	let paused = $state(false);
 	let loaded = $state(false);
 	let message = $state('');
@@ -36,10 +31,7 @@
 			account = a.account;
 			delayMinutes = a.payout_delay_minutes;
 			windowMinutes = a.dispute_window_minutes;
-			const p = await api<{ payouts: Payout[]; upcoming_minor: number; paid_minor: number; paused: boolean }>('/api/v1/me/payouts');
-			payouts = p.payouts;
-			upcoming = p.upcoming_minor;
-			paid = p.paid_minor;
+			const p = await api<{ paused: boolean }>('/api/v1/me/payouts');
 			paused = p.paused;
 			if (!account) await startEditing();
 		} catch (e) {
@@ -97,31 +89,14 @@
 		}
 	}
 
-	function status(p: Payout): { label: string; detail: string; tone: string } {
-		switch (p.state) {
-			case 'paid':
-				return { label: 'Paid', detail: `Sent ${p.paid_at ? when(p.paid_at) : ''} to ${p.bank_name} ••${p.account_last4}`, tone: '' };
-			case 'processing':
-				return { label: 'Sending', detail: p.note || 'On its way to your bank.', tone: '' };
-			case 'failed':
-				return { label: 'Needs attention', detail: 'The transfer did not go through. WantMyTime has been alerted and will retry once it is fixed.', tone: 'alert-critical' };
-			case 'cancelled':
-				return { label: 'No payout', detail: 'The buyer was refunded in full.', tone: '' };
-			default:
-				if (p.hold) return { label: 'On hold', detail: p.hold_text || 'On hold.', tone: 'alert-warning' };
-				if (new Date(p.release_at) > new Date()) return { label: 'Scheduled', detail: `Due ${when(p.release_at)}`, tone: '' };
-				return { label: 'Due', detail: p.note || 'Being prepared.', tone: '' };
-		}
-	}
-	const shown = (p: Payout) => (p.state === 'scheduled' ? p.entitlement_minor : (p.transfer_minor ?? 0));
 </script>
 
 <svelte:head><title>Payouts — WantMyTime</title></svelte:head>
 <section class="form-page app-page">
 	<a class="back-link" href="/app/settings">← Settings</a>
 	<p class="eyebrow">Payouts</p>
-	<h1 class="page-heading">Getting paid.</h1>
-	<p class="page-intro">Buyers pay WantMyTime when they book. WantMyTime holds the money until the session is over, gives the buyer {hours(windowMinutes)} after it ends to report a problem, then sends your share to your bank about {hours(delayMinutes)} after the end. If the buyer reports a problem, that booking’s payout waits until WantMyTime has looked at it.</p>
+	<h1 class="page-heading">Where your money goes.</h1>
+	<p class="page-intro">People pay when they book. We hold the money until the call is over and the buyer’s {hours(windowMinutes)} to report a problem have passed, then send your share here, about {hours(delayMinutes)} after the call. If they report a problem, that payout waits until we’ve looked at it.</p>
 	{#if message}<p class="notice notice-info" aria-live="polite">{message}</p>{/if}
 	{#if paused}<p class="notice notice-warning">Payouts are briefly paused by WantMyTime. Nothing is lost; they will be sent when the pause is lifted.</p>{/if}
 
@@ -155,28 +130,7 @@
 			{/if}
 		</section>
 
-		<section class="readiness-panel">
-			<h2>Your payouts</h2>
-			<div class="appointment-slip"><div><small>ON THE WAY</small><strong>{formatNaira(upcoming)}</strong></div><div><small>PAID</small><strong>{formatNaira(paid)}</strong></div></div>
-			{#if payouts.length === 0}
-				<p>No payouts yet. They appear here once a buyer pays for a booking.</p>
-			{:else}
-				<div class="list-stack">
-					{#each payouts as p (p.id)}
-						{@const s = status(p)}
-						<article class="list-card">
-							<div>
-								<strong>{formatNaira(shown(p))} · {p.buyer_name}</strong>
-								<p>{s.detail}</p>
-								{#if p.recovery_minor > 0}<small>{formatNaira(p.recovery_minor)} kept to repay an earlier refund.</small>{/if}
-								<small><a href={`/app/bookings/${encodeURIComponent(p.booking_id)}`}>View booking</a></small>
-							</div>
-							<span class={s.tone}>{s.label.toUpperCase()}</span>
-						</article>
-					{/each}
-				</div>
-			{/if}
-		</section>
+		<p class="form-note">Your payouts, paid and on the way, are under <a class="text-link" href="/app/money">Money</a>.</p>
 	{:else}
 		<p class="page-intro">Loading…</p>
 	{/if}

@@ -62,6 +62,26 @@ paths:
   /api/v1/me/sessions/revoke-others:
     post:
       responses: { '200': { description: Other sessions revoked while keeping the current session active } }
+  /api/v1/bookings/start:
+    post:
+      description: Opens a booking-only session for an email, so a buyer can hold a time and pay without an email code first. Limited to that booking.
+      requestBody: { content: { application/json: { schema: { type: object, required: [email], properties: { email: { type: string } } } } } }
+      responses: { '200': { description: Session cookie set }, '403': { description: Account restricted }, '422': { description: Invalid email }, '429': { description: Too many starts for this email } }
+  /api/v1/ops/funnels:
+    get:
+      description: Buyer booking funnel and seller setup funnel. Requires ops:read and recent MFA.
+      parameters: [{ name: days, in: query, schema: { type: integer, enum: [7, 30, 90], default: 30 } }]
+      responses: { '200': { description: 'days, buyer and seller steps (key, label, count, basis), median_hours_to_first_paid, notes' } }
+  /api/v1/me/data-export:
+    get:
+      description: Everything held about the signed-in person as a JSON file download. Three per 24 hours.
+      responses: { '200': { description: JSON attachment }, '401': { description: Full sign-in required }, '429': { description: Daily export limit reached } }
+  /api/v1/me/deletion:
+    get:
+      responses: { '200': { description: 'can_delete, blockers (plain-language reasons) and the email to type' } }
+    post:
+      requestBody: { content: { application/json: { schema: { type: object, required: [confirm_email], properties: { confirm_email: { type: string } } } } } }
+      responses: { '200': { description: Account deleted and session cleared }, '409': { description: 'ACCOUNT_HAS_OPEN_ITEMS, with blockers' }, '422': { description: Confirmation email does not match } }
   /api/v1/me/settlements:
     get:
       responses: { '200': { description: Cursor-paginated seller-owned allocations and independently verified provider settlement evidence, with next_cursor } }
@@ -124,7 +144,7 @@ paths:
   /api/v1/quotes/{id}:
     get:
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
-      responses: { '200': { description: Participant-scoped quote with booking id and payment state when converted }, '404': { description: Quote unavailable } }
+      responses: { '200': { description: Participant-scoped quote with booking id and payment state when converted; transfer_fee_minor is the bank transfer fee the buyer pays on top of the price (0 when payments are not configured) }, '404': { description: Quote unavailable } }
   /api/v1/dev/quotes/{id}/simulate-payment:
     post:
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
@@ -132,7 +152,7 @@ paths:
   /api/v1/quotes/{id}/checkout:
     post:
       parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
-      responses: { '200': { description: Existing or initialized hosted checkout (one provider reference per quote makes retries idempotent; the time hold is extended before redirect) for the participant's quote }, '401': { description: Verified buyer required }, '409': { description: Quote or seller unavailable }, '503': { description: Provider controls, credentials or approved economics unavailable } }
+      responses: { '200': { description: Existing or initialized hosted checkout (one provider reference per quote makes retries idempotent; the time hold is extended before redirect) for the participant's quote; returns price_minor, fee_minor (bank transfer fee paid by the buyer) and total_minor = price_minor + fee_minor }, '401': { description: Verified buyer required }, '409': { description: Quote or seller unavailable }, '503': { description: Provider controls, credentials or approved economics unavailable } }
   /api/v1/quotes/{id}/verify-payment:
     post:
       parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]

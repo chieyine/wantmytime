@@ -15,6 +15,18 @@ services:
       timeout: 3s
       retries: 12
 
+  # Shared rate limits across API instances. Managed Redis (Upstash, Redis Cloud)
+  # works too: set REDIS_URL to its rediss:// address.
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "volatile-ttl"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
   mailpit:
     image: axllent/mailpit:v1.31.1
     ports:
@@ -45,6 +57,12 @@ services:
       ALLOW_LOG_OTP: "false"
       # The API is only reachable through the gateway, so X-Forwarded-For is trusted for rate limits.
       TRUST_PROXY_HEADERS: "true"
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      MEDIA_S3_ENDPOINT: ${MEDIA_S3_ENDPOINT:-}
+      MEDIA_S3_BUCKET: ${MEDIA_S3_BUCKET:-}
+      MEDIA_S3_ACCESS_KEY_ID: ${MEDIA_S3_ACCESS_KEY_ID:-}
+      MEDIA_S3_SECRET_ACCESS_KEY: ${MEDIA_S3_SECRET_ACCESS_KEY:-}
+      MEDIA_PUBLIC_BASE_URL: ${MEDIA_PUBLIC_BASE_URL:-}
       LOCAL_PAYMENT_SIMULATOR: "true"
       CHECKOUTS_PAUSED: "true"
       EMAIL_PROVIDER: ${EMAIL_PROVIDER:-disabled}
@@ -83,6 +101,8 @@ services:
         condition: service_completed_successfully
       mailpit:
         condition: service_started
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
   web:
@@ -98,6 +118,7 @@ services:
       APP_RELEASE: ${APP_RELEASE:-}
       SENTRY_DSN: ${SENTRY_DSN:-}
       PUBLIC_SENTRY_DSN: ${PUBLIC_SENTRY_DSN:-}
+      PUBLIC_MEDIA_BASE_URL: ${MEDIA_PUBLIC_BASE_URL:-}
       PUBLIC_APP_ENV: local
       PUBLIC_APP_RELEASE: ${APP_RELEASE:-}
     expose:

@@ -38,3 +38,15 @@ Google Calendar and Meet (optional; the feature is hidden until configured):
 4. Apply migration `016_google_calendar.sql`. The calendar worker starts automatically when these are set.
 
 Calendar scopes are sensitive. Until Google verifies the app, sellers see an "unverified app" warning and the app is limited to test users (a small cap). Submit the app for verification before opening sign-ups. Rotating `CALENDAR_TOKEN_ENCRYPTION_KEY` makes existing connections unreadable: sellers would need to reconnect.
+
+Redis (shared rate limits). Set `REDIS_URL` to a Redis 6+ instance reachable only from the API, for example a managed Upstash or Redis Cloud database (`rediss://default:<password>@<host>:<port>`, TLS) or the Compose `redis` service (`redis://redis:6379/0`). It holds only short-lived counters, so it needs no persistence or backups; 64 MB is plenty. Without it, limits are counted per API instance.
+
+Cloudflare R2 (profile photos). Create a bucket (for example `wantmytime-media`) and an R2 API token with Object Read & Write on that bucket only. Set `MEDIA_S3_ENDPOINT=https://<account id>.r2.cloudflarestorage.com`, `MEDIA_S3_BUCKET`, `MEDIA_S3_ACCESS_KEY_ID` and `MEDIA_S3_SECRET_ACCESS_KEY` (region defaults to `auto`). To serve photos from Cloudflare's edge, connect a custom domain to the bucket (for example `media.wantmytime.com`) and set it as `MEDIA_PUBLIC_BASE_URL` on the API and `PUBLIC_MEDIA_BASE_URL` on the web server (the web server adds it to the Content Security Policy). Photo addresses stay `/api/v1/people/<handle>/avatar?v=<n>`; the API redirects to the bucket. Without a public domain the API streams photos from the private bucket. Without R2 at all, photos stay in PostgreSQL. Existing photos in PostgreSQL keep working; they move to R2 when the person next uploads one.
+
+Off-site backups use R2 too, through the backup job's `BACKUP_S3_URI` (`s3://<bucket>/<prefix>`), `BACKUP_S3_ENDPOINT` (the same account endpoint) and a separate token scoped to a separate backups bucket. Turn on object lock or versioning for that bucket.
+
+Start-up checks. With `APP_ENV=production` the API validates its configuration before serving and exits with a list of problems (weak, placeholder or reused secrets; bad key lengths; non-https origin; test switches left on). Generate each key with `openssl rand -base64 32` and each secret with `openssl rand -base64 48`, and never reuse one value for two settings.
+
+Security headers are set by the web server and the API themselves; the gateway passes them through. If TLS ends somewhere other than Cloudflare or a load balancer that already sends HSTS, the app's HSTS header (production only) covers it. Once the domain is stable on HTTPS, submit it at hstspreload.org.
+
+Migration `019_hardening.sql` adds R2 photo keys, deleted-account fields, link holds and the data-request log; apply it with `aside-api migrate`.

@@ -30,7 +30,7 @@ func paidBooking(t *testing.T, h *harness, fake *fakeKora, s seller, startsAt st
 	quoteID := quote["id"].(string)
 	checkout := buyer.expect(200, "POST", "/api/v1/quotes/"+quoteID+"/checkout", "{}")
 	reference := checkout["reference"].(string)
-	fake.pay(reference, 1000000)
+	fake.payFull(reference)
 	if res := sendKoraWebhook(t, h, "charge.success", map[string]any{"reference": reference, "status": "success", "amount": 10000, "currency": "NGN"}); res.Status != 200 {
 		t.Fatalf("webhook: %d %s", res.Status, res.Body)
 	}
@@ -204,6 +204,10 @@ func TestSellerCancellationBeforePayoutCancelsIt(t *testing.T) {
 		t.Fatalf("refund %s", got)
 	}
 	refundID := scalar[string](t, `SELECT id::text FROM refunds WHERE booking_id=$1`, first)
+	// The seller cancelled, so the buyer's transfer fee comes back too, at the platform's cost.
+	if got := scalar[string](t, `SELECT amount_minor||'/'||platform_share_minor||'/'||seller_share_minor FROM refunds WHERE id=$1`, refundID); got != "1015229/65229/950000" {
+		t.Fatalf("seller-cancel refund amounts %s", got)
+	}
 	if !journalBalanced(t, "refund", refundID) {
 		t.Fatal("refund journal must balance")
 	}

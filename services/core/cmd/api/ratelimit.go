@@ -1,23 +1,34 @@
 package main
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
-// rateLimiter is a fixed-window, per-client limiter held in process memory.
-// It protects a single API instance; run a shared limiter (for example at the
-// ingress) when several API instances serve traffic.
+// rateLimiter is a fixed-window, per-client limiter. With REDIS_URL set, the
+// count is shared by every API instance through Redis. Without Redis, or
+// whenever Redis does not answer within its short timeout, the limiter falls
+// back to a counter in this process, so a Redis outage never takes the API
+// down and never switches limits off entirely.
 type rateLimiter struct {
-	mu     sync.Mutex
+	name   string
 	limit  int
 	window time.Duration
-	hits   map[string]*rateWindow
-	swept  time.Time
+	shared *redisClient
+	onFail func(error)
+	onDeny func()
+
+	mu    sync.Mutex
+	hits  map[string]*rateWindow
+	swept time.Time
 }
 
 type rateWindow struct {
@@ -26,10 +37,59 @@ type rateWindow struct {
 }
 
 func newRateLimiter(limit int, window time.Duration) *rateLimiter {
-	return &rateLimiter{limit: limit, window: window, hits: map[string]*rateWindow{}}
+	return &rateLimiter{name: "local", limit: limit, window: window, hits: map[string]*rateWindow{}}
+}
+
+// limiter returns a named limiter that shares its counts through Redis when
+// it is configured.
+func (a *API) limiter(name string, limit int, window time.Duration) *rateLimiter {
+	if a.rateLimitScale > 1 {
+		limit *= a.rateLimitScale
+	}
+	l := newRateLimiter(limit, window)
+	l.name = name
+	l.shared = a.redis
+	l.onFail = func(err error) {
+		a.metrics.Count("aside_rate_limit_redis_errors_total", name)
+		a.log().Warn("shared rate limit unavailable; using local limit", "limiter", name, "error", err.Error())
+	}
+	l.onDeny = func() { a.metrics.Count("aside_rate_limited_total", name) }
+	return l
 }
 
 func (l *rateLimiter) allow(key string, now time.Time) bool {
+	return l.allowCtx(context.Background(), key, now)
+}
+
+func (l *rateLimiter) allowCtx(ctx context.Context, key string, now time.Time) bool {
+	ok := l.check(ctx, key, now)
+	if !ok && l.onDeny != nil {
+		l.onDeny()
+	}
+	return ok
+}
+
+func (l *rateLimiter) check(ctx context.Context, key string, now time.Time) bool {
+	if l.shared != nil {
+		n, err := l.shared.incrWindow(ctx, l.sharedKey(key, now), l.window)
+		if err == nil {
+			return n <= int64(l.limit)
+		}
+		if l.onFail != nil {
+			l.onFail(err)
+		}
+	}
+	return l.allowLocal(key, now)
+}
+
+// sharedKey hashes the client key so Redis never holds raw IP addresses.
+func (l *rateLimiter) sharedKey(key string, now time.Time) string {
+	sum := sha256.Sum256([]byte(l.name + "|" + key))
+	slot := now.UnixMilli() / l.window.Milliseconds()
+	return "wmt:rl:" + l.name + ":" + strconv.FormatInt(slot, 10) + ":" + hex.EncodeToString(sum[:12])
+}
+
+func (l *rateLimiter) allowLocal(key string, now time.Time) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if now.Sub(l.swept) > l.window {
@@ -73,13 +133,31 @@ func clientIP(r *http.Request) string {
 
 func (a *API) rateLimited(l *rateLimiter, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !l.allow(clientIP(r), time.Now()) {
-			w.Header().Set("Retry-After", "60")
-			problem(w, 429, "RATE_LIMITED", "Too many requests. Wait a minute and try again.")
+		if !l.allowCtx(r.Context(), clientIP(r), time.Now()) {
+			w.Header().Set("Retry-After", strconv.Itoa(int(l.window.Seconds())))
+			problem(w, 429, "RATE_LIMITED", "Too many requests. Wait a little and try again.")
 			return
 		}
 		next(w, r)
 	}
+}
+
+// writeLimited caps every state-changing API request per client address, on
+// top of the stricter limits on individual routes. Provider webhooks are exempt:
+// they come from a few provider addresses and are verified by signature.
+func (a *API) writeLimited(l *rateLimiter, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+		default:
+			if strings.HasPrefix(r.URL.Path, "/api/v1/") && !strings.HasPrefix(r.URL.Path, "/api/v1/webhooks/") && !l.allowCtx(r.Context(), clientIP(r), time.Now()) {
+				w.Header().Set("Retry-After", strconv.Itoa(int(l.window.Seconds())))
+				problem(w, 429, "RATE_LIMITED", "Too many requests. Wait a little and try again.")
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func validUUID(value string) bool {

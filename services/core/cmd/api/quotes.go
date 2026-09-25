@@ -415,9 +415,9 @@ func (a *API) getQuote(w http.ResponseWriter, r *http.Request) {
 	var amount int64
 	var duration int
 	var starts time.Time
-	var handle string
+	var handle, sellerName string
 	var bookingID, bookingPaymentState *string
-	err = tx.QueryRow(r.Context(), `SELECT q.state,q.expires_at,q.gross_minor,q.duration_minutes,q.starts_at,sp.handle FROM quotes q JOIN seller_profiles sp ON sp.id=q.seller_id WHERE q.id=$1 AND q.buyer_user_id=$2 FOR UPDATE OF q`, id, u.ID).Scan(&state, &expires, &amount, &duration, &starts, &handle)
+	err = tx.QueryRow(r.Context(), `SELECT q.state,q.expires_at,q.gross_minor,q.duration_minutes,q.starts_at,sp.handle,su.display_name FROM quotes q JOIN seller_profiles sp ON sp.id=q.seller_id JOIN users su ON su.id=sp.user_id WHERE q.id=$1 AND q.buyer_user_id=$2 FOR UPDATE OF q`, id, u.ID).Scan(&state, &expires, &amount, &duration, &starts, &handle, &sellerName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		problem(w, 404, "NOT_FOUND", "This quote is not available.")
 		return
@@ -450,7 +450,7 @@ func (a *API) getQuote(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "DATABASE_ERROR", "The quote could not be loaded.")
 		return
 	}
-	jsonOut(w, 200, map[string]any{"id": id, "state": state, "gross_minor": strconv.FormatInt(amount, 10), "duration_minutes": duration, "starts_at": starts, "expires_at": expires, "seller": handle, "booking_id": bookingID, "booking_payment_state": bookingPaymentState, "local_simulator": a.localPaymentSimulatorEnabled(), "provider_checkout_enabled": a.providerCheckoutConfigured(), "international_cards": internationalCardsEnabled(), "cancellation_policy": policyOrDefault(policyKey), "payment_methods": paymentMethods(), "problem_window_minutes": int(disputeWindow() / time.Minute)})
+	jsonOut(w, 200, map[string]any{"id": id, "state": state, "gross_minor": strconv.FormatInt(amount, 10), "duration_minutes": duration, "starts_at": starts, "expires_at": expires, "seller": handle, "seller_name": sellerName, "transfer_fee_minor": a.transferFeeEstimate(r.Context(), amount), "booking_id": bookingID, "booking_payment_state": bookingPaymentState, "local_simulator": a.localPaymentSimulatorEnabled(), "provider_checkout_enabled": a.providerCheckoutConfigured(), "international_cards": internationalCardsEnabled(), "cancellation_policy": policyOrDefault(policyKey), "payment_methods": paymentMethods(), "problem_window_minutes": int(disputeWindow() / time.Minute)})
 }
 
 // paymentMethods lists how the buyer may pay, bank transfer first.
@@ -541,7 +541,7 @@ func (a *API) simulatePayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var email string
-	err = tx.QueryRow(r.Context(), `SELECT normalized_identifier FROM user_identities WHERE user_id=$1 AND type='email' AND verified_at IS NOT NULL`, u.ID).Scan(&email)
+	err = tx.QueryRow(r.Context(), `SELECT normalized_identifier FROM user_identities WHERE user_id=$1 AND type='email' ORDER BY verified_at DESC NULLS LAST LIMIT 1`, u.ID).Scan(&email)
 	if err != nil {
 		problem(w, 503, "IDENTITY_ERROR", "The verified email could not be loaded.")
 		return

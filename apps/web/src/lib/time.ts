@@ -47,6 +47,15 @@ export function clockIn(iso: string, zone: string): string {
 	}
 }
 
+/** Just the clock time in a zone, e.g. "3:00 PM", for lists under a chosen date. */
+export function timeOnly(iso: string, zone: string): string {
+	try {
+		return new Intl.DateTimeFormat(undefined, { timeZone: zone, hour: 'numeric', minute: '2-digit' }).format(new Date(iso));
+	} catch {
+		return new Date(iso).toLocaleTimeString();
+	}
+}
+
 /** A full date and time in a given zone, e.g. "Thursday, 24 September 2026 at 3:00 PM WAT". */
 export function dateTimeIn(iso: string, zone: string): string {
 	try {

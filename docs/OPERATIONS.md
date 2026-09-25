@@ -70,6 +70,44 @@ Sellers connect Google Calendar from Settings > Calendar and meetings.
 
 **Failures:** a revoked grant shows on the seller's page with a reconnect button, and their calendar jobs stop. The `calendar` worker appears under System health and raises the usual stalled-worker alert. Connect and disconnect actions are recorded in the audit log.
 
+## Seller holds
+
+Sellers open for bookings on their own once the bank confirms their payout account. To stop a seller taking new bookings, open them under Operations → People and choose **Put on hold** with a reason; existing bookings stay. Only an operator can lift a hold. Restricting the account (also under People) goes further and signs them out.
+
+## Funnels
+
+Operations → Growth shows two funnels for the last 7, 30 or 90 days (`GET /api/v1/ops/funnels?days=`):
+
+- Buyers: viewed a booking page → opened the time picker → picked a time → held the time → opened payment → paid → the session took place.
+- Sellers who claimed a link in the period: claimed → set hours → added a bank account → copied or shared the link → first booking → first paid booking, plus the median time from claiming to the first paid booking.
+
+The first three buyer steps are browser events (`public_link_viewed`, `booking_started`, `slot_selected`), sent once per page visit with no names, emails or amounts; ad blockers make them undercount, so a later step can exceed an earlier one. Every later step is read from the holds, payment attempts and bookings themselves. Outside production, simulated payments count as paid (the page says so).
+
+## Data requests and retention
+
+People download their data and delete their accounts themselves from Settings → Your data; the API records each request in `data_requests` and each deletion in the audit log (`account.deleted`). For a request by email to privacy@wantmytime.com, verify the sender controls the account's address before acting, and reply within 30 days. If a deletion is blocked, the page tells the person what is still open (an upcoming or recent session, a payout on its way, a refund, an unrecovered refund, an open report); resolve that first. An operator with an active grant cannot delete their own account until the grant is revoked.
+
+Deleted accounts keep their ID with `status='deleted'`; their link is renamed `deleted-<id>` and the old name is held in `handle_holds` for 180 days.
+
+The lifecycle worker runs a retention sweep at most once an hour (in batches, so it never holds long locks):
+
+| Data | Rule |
+|---|---|
+| Sign-in codes | deleted one day after expiry |
+| Sessions | deleted 30 days after they expire or are revoked |
+| Calendar sign-in states, past busy times | deleted after a day |
+| Idempotency replies | deleted after 30 days |
+| Product analytics | deleted after 400 days |
+| Names on expired holds | cleared after 90 days |
+| Emails on closed offers | cleared after 180 days |
+| Meeting links | cleared 30 days after the session |
+| Data-request log | deleted after two years |
+| Expired link holds | deleted |
+
+Payment, refund, payout, ledger, booking and audit records are kept for six years (tax and anti-money-laundering records). Nothing deletes them automatically yet; schedule a review before the first records reach that age. Backups keep deleted data for `BACKUP_RETENTION_DAYS` (default 14) plus any off-site bucket retention, which the privacy notice states.
+
+A personal-data breach must be reported to the Nigeria Data Protection Commission within 72 hours of becoming aware of it, and to affected people without delay when it puts them at high risk. Record what happened, what data, how many people and what was done, even when no report is needed.
+
 ## Logs and request IDs
 
 The API writes one JSON line per request and per event to stdout (`time`, `level`, `msg`, `request_id`, `route`, `status`, `duration_ms`). The web server and the gateway do the same. Nginx creates the request ID, passes it to the web server and the API as `X-Request-ID`, and returns it on every response. When a user reports "Something went wrong (Reference: 3f2a…)", search all logs for that value to see the gateway, web and API lines for the same request. `LOG_LEVEL=debug` also logs `/health` and `/metrics` hits.
@@ -81,6 +119,8 @@ Set `SENTRY_DSN` (API and web server) and `PUBLIC_SENTRY_DSN` (browser) to a Sen
 ## Metrics
 
 `GET /metrics` on the API returns Prometheus text when `METRICS_TOKEN` is set, and requires `Authorization: Bearer <token>`. It returns 404 when the token is not set, and the gateway always returns 404 for `/metrics`, so scrape the API port over the private network. It includes request counts and latency by route, plus gauges for payment events and emails by state, open provider cases, active holds, bookings in the next 24 hours, firing alerts and worker heartbeat age. Grafana Cloud's free tier or any Prometheus can scrape it. Suggested dashboard panels: 5xx rate by route, p95 latency, `aside_alerts_firing`, `aside_worker_heartbeat_age_seconds`.
+
+Application counters: `aside_rate_limited_total{limiter}` (requests refused by each limit) and `aside_rate_limit_redis_errors_total{limiter}` (checks that fell back to the local count because Redis failed). A steady rise in the second means Redis is down or unreachable.
 
 ## Alerts
 

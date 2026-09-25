@@ -34,7 +34,7 @@ SELECT q.id, q.seller_id::text AS seller_id, q.buyer_name, q.gross_minor, q.stat
        EXISTS (SELECT 1 FROM seller_payout_accounts spa WHERE spa.seller_id = sp.id)::boolean AS has_payout_account, i.normalized_identifier AS buyer_email
 FROM quotes q
 JOIN seller_profiles sp ON sp.id = q.seller_id
-JOIN user_identities i ON i.user_id = q.buyer_user_id AND i.type = 'email' AND i.verified_at IS NOT NULL
+JOIN user_identities i ON i.user_id = q.buyer_user_id AND i.type = 'email'
 WHERE q.id = $1 AND q.buyer_user_id = $2
 LIMIT 1
 `
@@ -223,8 +223,8 @@ func (q *Queries) SaveTransferInstructions(ctx context.Context, arg SaveTransfer
 }
 
 const upsertPaymentAttempt = `-- name: UpsertPaymentAttempt :one
-INSERT INTO payment_attempts(id, quote_id, provider, environment, merchant_reference, expected_minor, currency, canonical_state, approved_fee_minor, fee_basis_points, channel)
-VALUES (gen_random_uuid(), $1::uuid, 'kora', $2, $3, $4, 'NGN', 'initializing', $5::bigint, $6::int, $7::text)
+INSERT INTO payment_attempts(id, quote_id, provider, environment, merchant_reference, expected_minor, currency, canonical_state, approved_fee_minor, fee_basis_points, channel, buyer_fee_minor)
+VALUES (gen_random_uuid(), $1::uuid, 'kora', $2, $3, $4, 'NGN', 'initializing', $5::bigint, $6::int, $7::text, $8::bigint)
 ON CONFLICT (provider, environment, merchant_reference) DO UPDATE SET updated_at = now()
 RETURNING id, canonical_state, COALESCE(authorization_url, '')::text AS authorization_url, transfer_details, instructions_expire_at,
   COALESCE(approved_fee_minor, 0)::bigint AS approved_fee_minor
@@ -238,6 +238,7 @@ type UpsertPaymentAttemptParams struct {
 	ApprovedFeeMinor int64
 	FeeBasisPoints   int32
 	Channel          string
+	BuyerFeeMinor    int64
 }
 
 type UpsertPaymentAttemptRow struct {
@@ -258,6 +259,7 @@ func (q *Queries) UpsertPaymentAttempt(ctx context.Context, arg UpsertPaymentAtt
 		arg.ApprovedFeeMinor,
 		arg.FeeBasisPoints,
 		arg.Channel,
+		arg.BuyerFeeMinor,
 	)
 	var i UpsertPaymentAttemptRow
 	err := row.Scan(

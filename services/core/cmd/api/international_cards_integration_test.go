@@ -20,7 +20,7 @@ func payWithCard(t *testing.T, h *harness, fake *fakeKora, country string, fee i
 	fake.mu.Unlock()
 	checkout := buyer.expect(200, "POST", "/api/v1/quotes/"+quoteID+"/checkout", map[string]string{"method": "card"})
 	reference = checkout["reference"].(string)
-	fake.pay(reference, 500000)
+	fake.payFull(reference)
 	if res := sendKoraWebhook(t, h, "charge.success", map[string]any{"reference": reference, "status": "success", "amount": 5000, "currency": "NGN"}); res.Status != 200 {
 		t.Fatalf("webhook: %d %s", res.Status, res.Body)
 	}
@@ -44,7 +44,7 @@ func TestInternationalCardFeeWithinScheduleBecomesBooking(t *testing.T) {
 	enablePayments(t, fake)
 	t.Setenv("INTERNATIONAL_CARDS_ENABLED", "true")
 	approveInternationalSchedule(t)
-	// ₦5,000: platform fee 5% = ₦250; a US card costs 3.9% + ₦100 = ₦295.
+	// ₦5,000: platform fee 5% = ₦250 plus the buyer's fee; a US card costs 3.9% + ₦100 = ₦295.
 	reference, quoteID := payWithCard(t, h, fake, "US", 29500)
 	bookingID := scalar[string](t, `SELECT id::text FROM bookings WHERE quote_id=$1 AND payment_state='paid'`, quoteID)
 	if got := scalar[string](t, `SELECT card_country FROM payment_attempts WHERE merchant_reference=$1`, reference); got != "US" {
@@ -70,7 +70,8 @@ func TestInternationalCardFeesOutsidePolicyStopForReview(t *testing.T) {
 
 	// Switched off: a foreign card whose fee exceeds the platform fee is an exception.
 	t.Setenv("INTERNATIONAL_CARDS_ENABLED", "false")
-	reference, quoteID := payWithCard(t, h, fake, "GB", 29500)
+	// The buyer's transfer fee (₦77 here) adds to the cover, so ₦330 is over it.
+	reference, quoteID := payWithCard(t, h, fake, "GB", 33000)
 	if got := scalar[string](t, `SELECT kind FROM payment_exceptions WHERE payment_attempt_id=(SELECT id FROM payment_attempts WHERE merchant_reference=$1)`, reference); got != "settlement_mismatch" {
 		t.Fatalf("exception kind = %s", got)
 	}
@@ -89,7 +90,7 @@ func TestInternationalCardFeesOutsidePolicyStopForReview(t *testing.T) {
 	}
 
 	// A Nigerian card never gets the international allowance.
-	reference, _ = payWithCard(t, h, fake, "NG", 29500)
+	reference, _ = payWithCard(t, h, fake, "NG", 33000)
 	if n := scalar[int64](t, `SELECT count(*) FROM payment_exceptions WHERE payment_attempt_id=(SELECT id FROM payment_attempts WHERE merchant_reference=$1) AND kind='settlement_mismatch'`, reference); n != 1 {
 		t.Fatal("a local card fee above the platform fee must stop for review")
 	}

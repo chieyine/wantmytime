@@ -12,9 +12,9 @@
 	}
 </script>
 <svelte:head><title>Access your bookings — WantMyTime</title></svelte:head>
-<section class="form-page"><a class="back-link" href="/">← WantMyTime</a><p class="eyebrow">Secure booking access</p><h1 class="page-heading">Open your bookings.</h1><p class="page-intro">Enter the email used when booking. We’ll send a code if email delivery is available. Your bookings appear only after you verify it.</p>
+<section class="form-page"><a class="back-link" href="/">← WantMyTime</a><p class="eyebrow">Your bookings</p><h1 class="page-heading">Find your booking.</h1><p class="page-intro">Enter the email you booked with. We’ll send a code, then show every booking made with it.</p>
 	<form class="setup-form" onsubmit={(e)=>{e.preventDefault();submit()}}><label>Email<input class="field" type="email" bind:value={email} autocomplete="email" required /></label>
 		{#if message}<p class="notice notice-warning" role="alert">{message}</p>{/if}
-		<button class="button" disabled={busy||!email.trim()}>{busy?'Sending code…':'Send verification code'}</button>
+		<button class="button" disabled={busy||!email.trim()}>{busy?'Sending your code…':'Send my code'}</button>
 	</form>
 </section>

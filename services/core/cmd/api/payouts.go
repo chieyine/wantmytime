@@ -566,6 +566,18 @@ func (a *API) setPayoutAccount(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "DATABASE_ERROR", "The bank account could not be saved.")
 		return
 	}
+	// A bank-confirmed account is enough to open bookings: money is held until
+	// after each call, so buyers stay protected. A seller an operator has put
+	// on hold ('held') stays closed.
+	if tag, readyErr := tx.Exec(r.Context(), `UPDATE seller_profiles SET readiness_state='ready',public_version=public_version+1 WHERE id=$1 AND readiness_state='incomplete'`, sellerID); readyErr != nil {
+		problem(w, 503, "DATABASE_ERROR", "The bank account could not be saved.")
+		return
+	} else if tag.RowsAffected() == 1 {
+		if _, err = tx.Exec(r.Context(), `INSERT INTO audit_events(id,actor_id,action,target_id,reason,safe_summary) VALUES(gen_random_uuid(),$1,'seller.opened_for_bookings',$1,'Bank account confirmed by the bank','{}'::jsonb)`, u.ID); err != nil {
+			problem(w, 503, "DATABASE_ERROR", "The bank account could not be saved.")
+			return
+		}
+	}
 	if err = tx.Commit(r.Context()); err != nil {
 		problem(w, 503, "DATABASE_ERROR", "The bank account could not be saved.")
 		return

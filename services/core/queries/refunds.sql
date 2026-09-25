@@ -2,7 +2,8 @@
 SELECT b.id::text AS booking_id, b.state, b.payment_state, b.starts_at, b.created_at, b.duration_minutes, b.gross_minor, b.currency,
        b.buyer_user_id::text AS buyer_user_id, sp.user_id::text AS seller_user_id, sp.id::text AS seller_id, b.cancellation_policy,
        COALESCE(pa.deduction_minor, 0)::bigint AS deduction_minor,
-       COALESCE(att.id::text, '')::text AS payment_attempt_id
+       COALESCE(att.id::text, '')::text AS payment_attempt_id,
+       COALESCE(att.buyer_fee_minor, 0)::bigint AS buyer_fee_minor
 FROM bookings b
 JOIN seller_profiles sp ON sp.id = b.seller_id
 LEFT JOIN payment_allocations pa ON pa.booking_id = b.id

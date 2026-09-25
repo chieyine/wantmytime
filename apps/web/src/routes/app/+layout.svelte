@@ -43,6 +43,6 @@
 		<header class="workspace-topbar"><span>WANTMYTIME / YOUR WORKSPACE</span><div>{#if account.handle}<a href={`/${account.handle}`}>VIEW PUBLIC PAGE <span aria-hidden="true">↗</span></a>{/if}<button class="workspace-mobile-signout" type="button" onclick={signOut}>SIGN OUT</button><span class="workspace-account-mark" aria-label={account.name}>{account.name?.slice(0, 1).toUpperCase() || 'A'}</span></div></header>
 		{#if signOutError}<p class="workspace-signout-error" role="alert">{signOutError}</p>{/if}
 		<nav class="workspace-mobile-nav" aria-label="Workspace sections">{#each navigation as item}<a href={item.href} class:active={current(item.href)} aria-current={current(item.href) ? 'page' : undefined}>{item.label}</a>{/each}</nav>
-		<div class="workspace-body" id="workspace-content">{@render children()}</div>
+		<div class="workspace-body" id="workspace-content" tabindex="-1">{@render children()}</div>
 	</div>
 </div>

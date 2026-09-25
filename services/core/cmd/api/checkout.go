@@ -137,6 +137,46 @@ func (a *API) ensureChannelEconomics(ctx context.Context, amount, platformFee in
 	return nil
 }
 
+// buyerTransferFee is what the buyer adds to the price so that the processor's
+// fee on the whole amount is covered: the smallest fee f with
+// cost(price+f) <= f under the approved schedule for the channel.
+func (a *API) buyerTransferFee(ctx context.Context, channel string, price int64) (int64, error) {
+	fee, err := store.New(a.db).ApprovedChannelFee(ctx, channel)
+	if err != nil {
+		return 0, err
+	}
+	bps, fixed, cap := int(fee.PercentBps), fee.FixedMinor, fee.CapMinor
+	if bps < 0 || bps >= 10000 || fixed < 0 || (cap != nil && *cap < 0) {
+		return 0, fmt.Errorf("channel %s has an invalid approved fee schedule", channel)
+	}
+	f := expectedProcessorCost(price, bps, fixed, cap)
+	for i := 0; i < 20; i++ {
+		next := expectedProcessorCost(price+f, bps, fixed, cap)
+		if next <= f {
+			return f, nil
+		}
+		f = next
+	}
+	return 0, fmt.Errorf("channel %s fee does not converge", channel)
+}
+
+// transferFeeEstimate is the fee a buyer would add for the default payment
+// method, or 0 when payments aren't set up.
+func (a *API) transferFeeEstimate(ctx context.Context, price int64) int64 {
+	if price <= 0 || !a.providerCheckoutConfigured() {
+		return 0
+	}
+	channels, err := approvedChannels()
+	if err != nil || len(channels) == 0 {
+		return 0
+	}
+	fee, err := a.buyerTransferFee(ctx, channels[0], price)
+	if err != nil {
+		return 0
+	}
+	return fee
+}
+
 func (a *API) collection() (*koraClient, error) { return newKoraClient(a.env) }
 
 func webhookURL() string {
@@ -204,13 +244,20 @@ func (a *API) initializeQuoteCheckout(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "SELLER_PAYOUT_NOT_READY", "This seller has not added a bank account for payouts yet.")
 		return
 	}
-	amount := quote.GrossMinor
-	platformFee, bps, err := approvedPlatformFee(amount)
+	price := quote.GrossMinor
+	platformFee, bps, err := approvedPlatformFee(price)
 	if err != nil {
 		problem(w, 422, "AMOUNT_NOT_APPROVED", err.Error())
 		return
 	}
-	if err = a.ensureChannelEconomics(r.Context(), amount, platformFee, []string{method}); err != nil {
+	// The buyer pays the bank's fee on top; the seller's price is untouched.
+	buyerFee, err := a.buyerTransferFee(r.Context(), method, price)
+	if err != nil {
+		problem(w, 503, "CHANNEL_COST_NOT_APPROVED", "This way of paying does not have an approved fee schedule.")
+		return
+	}
+	amount := price + buyerFee
+	if err = a.ensureChannelEconomics(r.Context(), amount, platformFee+buyerFee, []string{method}); err != nil {
 		problem(w, 503, "CHANNEL_COST_NOT_APPROVED", "This way of paying does not have an approved fee schedule within the five-percent limit.")
 		return
 	}
@@ -222,11 +269,11 @@ func (a *API) initializeQuoteCheckout(w http.ResponseWriter, r *http.Request) {
 	err = a.db.QueryRow(r.Context(), `SELECT id::text,merchant_reference,canonical_state,COALESCE(authorization_url,''),transfer_details,instructions_expire_at FROM payment_attempts WHERE quote_id=$1 AND channel=$2 AND canonical_state='awaiting_payment' ORDER BY created_at DESC LIMIT 1`, quote.ID, method).Scan(&existingID, &existingRef, &existingState, &existingURL, &existingDetails, &existingExpiry)
 	if err == nil {
 		if method == "card" && existingURL != "" {
-			jsonOut(w, 200, map[string]any{"payment_attempt_id": existingID, "reference": existingRef, "method": method, "authorization_url": existingURL, "state": "awaiting_payment"})
+			jsonOut(w, 200, map[string]any{"payment_attempt_id": existingID, "reference": existingRef, "method": method, "authorization_url": existingURL, "state": "awaiting_payment", "price_minor": price, "fee_minor": buyerFee, "total_minor": amount})
 			return
 		}
 		if method != "card" && existingExpiry != nil && existingExpiry.After(time.Now().Add(2*time.Minute)) && len(existingDetails) > 0 {
-			jsonOut(w, 200, map[string]any{"payment_attempt_id": existingID, "reference": existingRef, "method": method, "transfer": json.RawMessage(existingDetails), "state": "awaiting_payment"})
+			jsonOut(w, 200, map[string]any{"payment_attempt_id": existingID, "reference": existingRef, "method": method, "transfer": json.RawMessage(existingDetails), "state": "awaiting_payment", "price_minor": price, "fee_minor": buyerFee, "total_minor": amount})
 			return
 		}
 	} else if !errors.Is(err, pgx.ErrNoRows) {
@@ -250,7 +297,7 @@ func (a *API) initializeQuoteCheckout(w http.ResponseWriter, r *http.Request) {
 	}
 	reference := fmt.Sprintf("wmt-%s-%s%d", strings.ReplaceAll(quote.ID, "-", ""), letter, previous+1)
 	environment := environmentOf(a)
-	attempt, err := queries.UpsertPaymentAttempt(r.Context(), store.UpsertPaymentAttemptParams{QuoteID: quote.ID, Environment: environment, Reference: reference, ExpectedMinor: amount, ApprovedFeeMinor: platformFee, FeeBasisPoints: int32(bps), Channel: method})
+	attempt, err := queries.UpsertPaymentAttempt(r.Context(), store.UpsertPaymentAttemptParams{QuoteID: quote.ID, Environment: environment, Reference: reference, ExpectedMinor: amount, ApprovedFeeMinor: platformFee, FeeBasisPoints: int32(bps), Channel: method, BuyerFeeMinor: buyerFee})
 	if err != nil {
 		problem(w, 503, "PAYMENT_INTENT_UNAVAILABLE", "The checkout could not be saved safely.")
 		return
@@ -284,7 +331,7 @@ func (a *API) initializeQuoteCheckout(w http.ResponseWriter, r *http.Request) {
 			problem(w, 503, "PAYMENT_INITIALIZATION_UNKNOWN", "The payment page opened but could not be saved. Refresh and try again.")
 			return
 		}
-		jsonOut(w, 200, map[string]any{"payment_attempt_id": attempt.ID, "reference": reference, "method": method, "authorization_url": checkoutURL, "state": "awaiting_payment"})
+		jsonOut(w, 200, map[string]any{"payment_attempt_id": attempt.ID, "reference": reference, "method": method, "authorization_url": checkoutURL, "state": "awaiting_payment", "price_minor": price, "fee_minor": buyerFee, "total_minor": amount})
 		return
 	}
 	details, err := client.startBankTransfer(r.Context(), req)
@@ -307,7 +354,7 @@ func (a *API) initializeQuoteCheckout(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "PAYMENT_INITIALIZATION_UNKNOWN", "The transfer account could not be saved. Refresh and try again; do not transfer yet.")
 		return
 	}
-	jsonOut(w, 200, map[string]any{"payment_attempt_id": attempt.ID, "reference": reference, "method": method, "transfer": details, "state": "awaiting_payment"})
+	jsonOut(w, 200, map[string]any{"payment_attempt_id": attempt.ID, "reference": reference, "method": method, "transfer": details, "state": "awaiting_payment", "price_minor": price, "fee_minor": buyerFee, "total_minor": amount})
 }
 
 func (a *API) extendHold(ctx context.Context, w http.ResponseWriter, quoteID string, until time.Time) bool {

@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
@@ -192,5 +194,36 @@ func TestParseClockMinutesAcceptsDatabaseFormat(t *testing.T) {
 func TestValidNameRejectsControlCharacters(t *testing.T) {
 	if !validName("Adaeze Okafor") || validName("Ada\nBcc: x") || validName("") || validName(strings.Repeat("a", 81)) {
 		t.Fatal("display name validation is wrong")
+	}
+}
+
+func TestProductionConfigChecks(t *testing.T) {
+	key := func(b byte) string { return base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{b}, 32)) }
+	good := map[string]string{
+		"SESSION_SECRET": "k8Jq2mV9xR4tW7yB1nC5eH3gL6pS0dZa", "OTP_PEPPER": "Q2w9E4r7T1y5U8i3O6p0A2s4D6f8G1hJ",
+		"OPS_MFA_ENCRYPTION_KEY": key(1), "MEETING_LINK_ENCRYPTION_KEY": key(2), "PAYOUT_ACCOUNT_ENCRYPTION_KEY": key(3),
+		"PUBLIC_APP_ORIGIN": "https://wantmytime.com", "REDIS_URL": "rediss://:pw@cache.example.net:6380",
+		"MEDIA_S3_ENDPOINT": "https://acct.r2.cloudflarestorage.com", "DATABASE_URL": "postgres://u:p@db.example.net/wmt?sslmode=verify-full", "SENTRY_DSN": "https://k@o1.ingest.sentry.io/1",
+	}
+	get := func(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
+	if problems, warnings := productionConfigProblems(get(good)); len(problems) != 0 || len(warnings) != 0 {
+		t.Fatalf("good config rejected: %v %v", problems, warnings)
+	}
+	bad := map[string]string{}
+	for k, v := range good {
+		bad[k] = v
+	}
+	bad["SESSION_SECRET"] = "local-only-session-secret-change-before-use"
+	bad["MEETING_LINK_ENCRYPTION_KEY"] = key(1)
+	bad["PUBLIC_APP_ORIGIN"] = "http://wantmytime.com"
+	bad["LOCAL_PAYMENT_SIMULATOR"] = "true"
+	bad["KORA_API_BASE"] = "http://127.0.0.1:9912"
+	bad["GOOGLE_CLIENT_ID"] = "x.apps.googleusercontent.com"
+	problems, _ := productionConfigProblems(get(bad))
+	joined := strings.Join(problems, "\n")
+	for _, want := range []string{"SESSION_SECRET still holds a placeholder", "MEETING_LINK_ENCRYPTION_KEY reuses the value of OPS_MFA_ENCRYPTION_KEY", "PUBLIC_APP_ORIGIN", "LOCAL_PAYMENT_SIMULATOR", "KORA_API_BASE", "CALENDAR_TOKEN_ENCRYPTION_KEY"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("missing problem %q in:\n%s", want, joined)
+		}
 	}
 }

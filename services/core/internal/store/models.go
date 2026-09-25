@@ -134,6 +134,13 @@ type CalendarJob struct {
 	UpdatedAt time.Time
 }
 
+type DataRequest struct {
+	ID        string
+	UserID    string
+	Kind      string
+	CreatedAt time.Time
+}
+
 type EmailChallenge struct {
 	ID              string
 	NormalizedEmail string
@@ -152,6 +159,12 @@ type GrowthRelationship struct {
 	QualifyingBookingID *string
 	AttributionMethod   string
 	AttributedAt        time.Time
+}
+
+type HandleHold struct {
+	Handle    string
+	HeldUntil time.Time
+	CreatedAt time.Time
 }
 
 type IdempotencyRecord struct {
@@ -317,6 +330,7 @@ type PaymentAttempt struct {
 	TransferDetails       []byte
 	InstructionsExpireAt  *time.Time
 	PaidMinor             *int64
+	BuyerFeeMinor         int64
 }
 
 type PaymentException struct {
@@ -549,6 +563,7 @@ type SellerProfile struct {
 	AvatarVersion        int64
 	PublicVersion        int64
 	CancellationPolicy   string
+	AvatarKey            *string
 }
 
 type SellerRecovery struct {
@@ -624,6 +639,7 @@ type User struct {
 	Status      string
 	Timezone    string
 	CreatedAt   time.Time
+	DeletedAt   *time.Time
 }
 
 type UserIdentity struct {

@@ -191,7 +191,7 @@ func (q *Queries) LockOfferState(ctx context.Context, id string) (string, error)
 }
 
 const lockPaymentAttemptByReference = `-- name: LockPaymentAttemptByReference :one
-SELECT id, quote_id, expected_minor, currency, canonical_state, approved_fee_minor, fee_basis_points, provider_transaction_id, booking_id, COALESCE(channel, '')::text AS channel
+SELECT id, quote_id, expected_minor, currency, canonical_state, approved_fee_minor, fee_basis_points, provider_transaction_id, booking_id, COALESCE(channel, '')::text AS channel, buyer_fee_minor
 FROM payment_attempts
 WHERE provider = 'kora' AND environment = $1 AND merchant_reference = $2
 FOR UPDATE
@@ -213,6 +213,7 @@ type LockPaymentAttemptByReferenceRow struct {
 	ProviderTransactionID *string
 	BookingID             *string
 	Channel               string
+	BuyerFeeMinor         int64
 }
 
 func (q *Queries) LockPaymentAttemptByReference(ctx context.Context, arg LockPaymentAttemptByReferenceParams) (LockPaymentAttemptByReferenceRow, error) {
@@ -229,6 +230,7 @@ func (q *Queries) LockPaymentAttemptByReference(ctx context.Context, arg LockPay
 		&i.ProviderTransactionID,
 		&i.BookingID,
 		&i.Channel,
+		&i.BuyerFeeMinor,
 	)
 	return i, err
 }
@@ -413,10 +415,11 @@ func (q *Queries) RecordServerProductEvent(ctx context.Context, arg RecordServer
 
 const verifiedEmailForUser = `-- name: VerifiedEmailForUser :one
 SELECT normalized_identifier FROM user_identities
-WHERE user_id = $1 AND type = 'email' AND verified_at IS NOT NULL
-ORDER BY verified_at DESC LIMIT 1
+WHERE user_id = $1 AND type = 'email'
+ORDER BY verified_at DESC NULLS LAST LIMIT 1
 `
 
+// The buyer's email, confirmed or not (buyers may pay before confirming it).
 func (q *Queries) VerifiedEmailForUser(ctx context.Context, userID string) (string, error) {
 	row := q.db.QueryRow(ctx, verifiedEmailForUser, userID)
 	var normalized_identifier string

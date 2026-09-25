@@ -38,6 +38,7 @@ Covered journeys:
 - International cards (`international_cards_integration_test.go`):
   - A foreign card whose fee is within the approved schedule becomes a booking, with the seller's share intact and a balanced ledger.
   - The same payment with the setting off, a fee above the schedule, or a Nigerian card over the platform fee stops as an exception.
+  - The buyer pays the bank transfer fee: the charge is price plus fee, the seller still gets 95% of the price, the platform books its fee plus the transfer fee, and a seller cancellation refunds the fee too.
 
 - Google Calendar (`calendar_integration_test.go`, against a fake Google):
   - Connecting uses PKCE and offline access, and stores the refresh token encrypted.
@@ -59,6 +60,20 @@ Covered journeys:
   - Reviews are refused before the session, from the seller, when invalid or when repeated. Replies are limited to one, ratings appear publicly and on the profile, hiding works, and the review request is dropped once a review exists.
 
 `services/core/internal/observe` has unit tests for request-ID validation, Sentry DSN parsing, event throttling, panic recovery (one report per panic, no panic text in the response), metrics output and log levels.
+
+## Phase 7 checks
+
+- `funnels_integration_test.go`: a page view, time picker, time pick, share, hold and simulated payment each move the right funnel step by one; the endpoint needs operations access.
+- Accessibility and layout are checked in a browser rather than in CI: seed a seller, a buyer and an operator, then run axe-core on every page at 1280px and 390px, recording violations, horizontal overflow and console errors, and tab through the main pages to confirm focus order and visible focus. Last run (2026-09-25): no violations, no overflow, no errors.
+
+## Phase 6 checks
+
+- `ratelimit_test.go`: RESP parsing, Redis URL parsing, fallback when Redis is down, and one count shared by two limiter instances (needs `REDIS_TEST_URL`, for example `redis://127.0.0.1:6379/3`; skipped without it).
+- `objectstore_test.go`: the S3 Signature V4 header matches a value computed independently with botocore, and a put/get/delete round trip against a fake bucket.
+- `main_test.go` `TestProductionConfigChecks`: start-up configuration problems are caught.
+- `hardening_integration_test.go`: route rate limits (webhooks exempt), API security headers, photos stored in and served from the bucket (stream and redirect) and cleaned up on replace and delete, the data export (contents, no secrets, guest sessions refused, daily limit), account deletion (blockers, confirmation, erased identifiers, kept bookings, link hold, fresh sign-up, buyer name removal) and the retention sweep.
+
+The integration harness multiplies every rate limit by 100 so journeys are not throttled; `TestRateLimitsApplyPerAddress` uses the real limits.
 
 ## Backups
 

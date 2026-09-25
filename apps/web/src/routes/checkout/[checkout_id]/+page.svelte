@@ -4,7 +4,7 @@
 	import { formatNaira } from '$lib/money';
 	let { params } = $props();
 
-	type Quote = { id: string; state: string; gross_minor: string; duration_minutes: number; starts_at: string; expires_at: string; seller: string; booking_id: string | null; booking_payment_state: string | null; local_simulator: boolean; provider_checkout_enabled: boolean; international_cards?: boolean; cancellation_policy?: { name: string; summary: string }; payment_methods?: string[]; problem_window_minutes?: number };
+	type Quote = { id: string; state: string; gross_minor: string; duration_minutes: number; starts_at: string; expires_at: string; seller: string; seller_name?: string; transfer_fee_minor?: number; booking_id: string | null; booking_payment_state: string | null; local_simulator: boolean; provider_checkout_enabled: boolean; international_cards?: boolean; cancellation_policy?: { name: string; summary: string }; payment_methods?: string[]; problem_window_minutes?: number };
 	type Transfer = { account_number: string; account_name: string; bank_name: string; amount_minor: number; expires_at: string };
 	type Checkout = { reference: string; method: string; authorization_url?: string; transfer?: Transfer };
 
@@ -122,25 +122,25 @@
 
 <svelte:head><title>Review your time — WantMyTime</title></svelte:head>
 <section class="form-page">
-	<p class="eyebrow">Review your time</p>
-	<h1 class="page-heading">{transfer ? 'Make the transfer.' : 'One more step.'}</h1>
+	<p class="eyebrow">Almost done</p>
+	<h1 class="page-heading">{transfer ? 'Make the transfer.' : 'Pay and you’re booked.'}</h1>
 	{#if loading}
 		<p class="page-intro">Loading your booking details…</p>
 	{:else if !quote}
 		<div class="notice notice-warning">{message}</div>
 	{:else}
 		<div class="appointment-slip">
-			<div><small>WITH</small><strong>{quote.seller}</strong></div>
+			<div><small>WITH</small><strong>{quote.seller_name || quote.seller}</strong></div>
 			<div><small>WHEN</small><strong>{dateLabel(quote.starts_at)}</strong></div>
 			<div><small>HOW LONG</small><strong>{quote.duration_minutes} minutes</strong></div>
 			<div><small>PRICE</small><strong>{formatNaira(Number(quote.gross_minor))}</strong></div>
 		</div>
 
 		{#if quote.state === 'expired'}
-			<div class="notice notice-warning">This time hold expired. Go back and choose another time.</div>
-			<a class="button button-secondary" href={`/book/new?seller=${encodeURIComponent(quote.seller)}&duration=${quote.duration_minutes}`}>Choose another time</a>
+			<div class="notice notice-warning">That hold ran out, so the time was released. Pick it again if it’s still free.</div>
+			<a class="button button-secondary" href={`/book/new?seller=${encodeURIComponent(quote.seller)}&duration=${quote.duration_minutes}`}>Pick a time again</a>
 		{:else if quote.local_simulator && quote.state === 'held'}
-			<div class="notice notice-warning">Development simulator only. Pressing the button confirms a local test booking. No money is collected, and this is not a real payment.</div>
+			<div class="notice notice-warning">Test setup: this button confirms the booking without any money moving.</div>
 			{#if message}<p class="notice notice-warning" role="alert">{message}</p>{/if}
 			<button class="button" onclick={simulate} disabled={busy}>{busy ? 'Confirming local test…' : 'Confirm test booking'} <span>↗</span></button>
 		{:else if quote.state === 'converted'}
@@ -169,8 +169,8 @@
 			{:else}
 				{#if status === 'expired'}<p class="notice notice-warning">That account has expired. Don’t transfer to it. If you already did, the money is returned automatically. Get new details below.</p>{/if}
 				{#if canTransfer}
-					<button class="button" onclick={() => start('bank_transfer')} disabled={busy}>{busy ? 'Getting account details…' : `Pay ${formatNaira(Number(quote.gross_minor))} by bank transfer`}</button>
-					<p class="form-note">You’ll get an account number to transfer to from any Nigerian bank app. Your booking is confirmed the moment the money arrives.</p>
+					<button class="button" onclick={() => start('bank_transfer')} disabled={busy}>{busy ? 'Getting account details…' : `Pay ${formatNaira(Number(quote.gross_minor) + (quote.transfer_fee_minor ?? 0))} by bank transfer`}</button>
+					<p class="form-note">{(quote.transfer_fee_minor ?? 0) > 0 ? `Includes ${formatNaira(quote.transfer_fee_minor ?? 0)} bank transfer fee. ` : ''}You’ll get an account number to transfer to from any Nigerian bank app. Your booking is confirmed the moment the money arrives.</p>
 				{/if}
 				{#if canCard}
 					<button class={canTransfer ? 'text-link' : 'button'} onclick={() => start('card')} disabled={busy}>{canTransfer ? 'Pay with a card instead' : 'Continue to card payment'}</button>

@@ -136,7 +136,7 @@ func newHarness(t *testing.T) *harness {
 	t.Setenv("APP_ENV", "local")
 	t.Setenv("OTP_PEPPER", "integration-test-pepper")
 	t.Setenv("PUBLIC_APP_ORIGIN", testOrigin)
-	a := &API{db: itPool, env: "local", sessionKey: []byte("integration-test-session-secret-0123456789"), mailer: itMail.deliver, mailCapture: itMail.capture}
+	a := &API{db: itPool, env: "local", sessionKey: []byte("integration-test-session-secret-0123456789"), mailer: itMail.deliver, mailCapture: itMail.capture, rateLimitScale: 100}
 	server := httptest.NewServer(a.routes())
 	t.Cleanup(server.Close)
 	return &harness{t: t, api: a, server: server}
@@ -545,6 +545,14 @@ func newFakeKora(t *testing.T) *fakeKora {
 	return f
 }
 
+// payFull marks a charge as paid in full: the price plus the transfer fee.
+func (f *fakeKora) payFull(reference string) {
+	f.mu.Lock()
+	amount := f.charges[reference].amount
+	f.mu.Unlock()
+	f.pay(reference, amount)
+}
+
 // pay marks a charge as paid by the buyer (the whole amount, or part of it).
 func (f *fakeKora) pay(reference string, paid int64) {
 	f.mu.Lock()
@@ -626,7 +634,7 @@ func TestPaidBookingByBankTransfer(t *testing.T) {
 	checkout := buyer.expect(200, "POST", "/api/v1/quotes/"+quoteID+"/checkout", "{}")
 	reference := checkout["reference"].(string)
 	transfer := checkout["transfer"].(map[string]any)
-	if checkout["method"] != "bank_transfer" || transfer["bank_name"] != "Wema Bank" || transfer["amount_minor"] != float64(1000000) || transfer["account_number"] == "" {
+	if checkout["method"] != "bank_transfer" || transfer["bank_name"] != "Wema Bank" || transfer["amount_minor"] != float64(1015229) || checkout["fee_minor"] != float64(15229) || checkout["price_minor"] != float64(1000000) || transfer["account_number"] == "" {
 		t.Fatalf("unexpected checkout %v", checkout)
 	}
 	// Asking again shows the same account instead of creating a second one.
@@ -647,7 +655,7 @@ func TestPaidBookingByBankTransfer(t *testing.T) {
 	if got := buyer.expect(200, "POST", "/api/v1/quotes/"+quoteID+"/verify-payment", map[string]string{"reference": reference}); got["state"] != "underpaid" {
 		t.Fatalf("short transfer: %v", got)
 	}
-	fake.pay(reference, 1000000)
+	fake.payFull(reference)
 	if res := sendKoraWebhook(t, h, "charge.success", map[string]any{"reference": reference, "status": "success", "amount": 10000, "fee": 150, "currency": "NGN"}); res.Status != 200 {
 		t.Fatalf("webhook: %d %s", res.Status, res.Body)
 	}
@@ -655,7 +663,7 @@ func TestPaidBookingByBankTransfer(t *testing.T) {
 		t.Fatal(err)
 	}
 	bookingID := scalar[string](t, `SELECT id::text FROM bookings WHERE quote_id=$1 AND payment_state='paid'`, quoteID)
-	if got := scalar[string](t, `SELECT channel||'/'||paid_minor FROM payment_attempts WHERE merchant_reference=$1`, reference); got != "bank_transfer/1000000" {
+	if got := scalar[string](t, `SELECT channel||'/'||paid_minor FROM payment_attempts WHERE merchant_reference=$1`, reference); got != "bank_transfer/1015229" {
 		t.Fatalf("attempt %s", got)
 	}
 	if got := scalar[string](t, `SELECT state FROM provider_events WHERE provider_reference=$1`, reference); got != "processed" {
@@ -721,7 +729,7 @@ func TestCardFallbackAndDoublePayment(t *testing.T) {
 	fake.mu.Lock()
 	fake.cardCountry = "NG"
 	fake.mu.Unlock()
-	fake.pay(cardRef, 1000000)
+	fake.payFull(cardRef)
 	paid := buyer.expect(200, "POST", "/api/v1/quotes/"+quoteID+"/verify-payment", map[string]string{"reference": cardRef})
 	bookingID, _ := paid["booking_id"].(string)
 	if bookingID == "" {
@@ -732,7 +740,7 @@ func TestCardFallbackAndDoublePayment(t *testing.T) {
 		t.Fatal("card funds should not be treated as available at once")
 	}
 	// The buyer also completes the transfer: that second payment is flagged for a refund.
-	fake.pay(transfer, 1000000)
+	fake.payFull(transfer)
 	buyer.expect(200, "POST", "/api/v1/quotes/"+quoteID+"/verify-payment", map[string]string{"reference": transfer})
 	if n := scalar[int64](t, `SELECT count(*) FROM payment_exceptions WHERE kind='duplicate_charge' AND payment_attempt_id=(SELECT id FROM payment_attempts WHERE merchant_reference=$1)`, transfer); n != 1 {
 		t.Fatal("the second payment must become a duplicate-charge exception")
@@ -754,7 +762,7 @@ func TestLateOfferPaymentRecordsException(t *testing.T) {
 	s.expect(200, "POST", "/api/v1/offers/"+offerID+"/accept", map[string]any{"version": 1})
 	quote := buyer.expect(201, "POST", "/api/v1/offers/"+offerID+"/checkout", map[string]string{"starts_at": h.slot(s.handle, 0)}, "Idempotency-Key", idempotencyKey())
 	checkout := buyer.expect(200, "POST", "/api/v1/quotes/"+quote["id"].(string)+"/checkout", "{}")
-	fake.pay(checkout["reference"].(string), 500000)
+	fake.payFull(checkout["reference"].(string))
 	// The buyer withdraws... not allowed once agreed, so the seller's side changes it directly.
 	if _, err := itPool.Exec(context.Background(), `UPDATE offers SET state='withdrawn' WHERE id=$1`, offerID); err != nil {
 		t.Fatal(err)

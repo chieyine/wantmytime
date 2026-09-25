@@ -18,7 +18,7 @@ func (a *API) recordProductEvent(w http.ResponseWriter, r *http.Request) {
 		problem(w, 400, "INVALID_BODY", "The event could not be recorded.")
 		return
 	}
-	allowed := map[string]bool{"public_link_viewed": true, "duration_selected": true, "slot_selected": true, "seller_cta_viewed": true, "seller_cta_clicked": true, "link_copy_clicked": true, "share_action_opened": true}
+	allowed := map[string]bool{"public_link_viewed": true, "booking_started": true, "duration_selected": true, "slot_selected": true, "seller_cta_viewed": true, "seller_cta_clicked": true, "link_copy_clicked": true, "share_action_opened": true}
 	if !allowed[in.Event] {
 		problem(w, 422, "INVALID_EVENT", "This product event is not available.")
 		return

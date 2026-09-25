@@ -12,12 +12,15 @@
 
 ## Still required before a private beta
 
-- [ ] Founder approves final name/domain and legal entity.
+- [x] Name, domain and legal entity chosen: WantMyTime, wantmytime.com, operated by Kredit Technologies Limited (RC 9834452).
 - [ ] Founder approves fee interpretation, transaction limits, subsidy policy, seller obligations/remedies, the escrow-and-payout route, the 2-hour problem window and the 3-hour payout time.
 - [ ] Kora merchant account approved for collecting and paying out (marketplace/escrow use confirmed in writing); sandbox keys supplied; transfer checkout, card checkout, signed webhook, short/late/double payments, refunds and payouts demonstrated in the Kora sandbox.
-- [ ] Approved terms, privacy, acceptable use, support details and retention periods supplied.
+- [x] Data export, account deletion, retention sweep and an NDPA-structured privacy notice are built.
+- [ ] Lawyer reviews the privacy notice and terms; approval date filled in on the privacy page; `privacy@wantmytime.com` mailbox set up and monitored; retention periods confirmed.
+- [ ] Data processing agreements in place with Kora, Cloudflare, the email provider, the error-reporting service and the host; check whether WantMyTime must register with the Nigeria Data Protection Commission as a data controller of major importance and file if so.
+- [ ] Approved terms, acceptable use and support details supplied.
 - [x] Pin SvelteKit Node adapter and implement web/API containers plus same-origin Nginx gateway in Compose. Production hosting, TLS and operator-managed deployment remain open.
-- [ ] Provision production PostgreSQL and secrets; verify migrations, backups and restore.
+- [ ] Provision production PostgreSQL, Redis, the R2 photo and backup buckets and secrets; confirm the API passes its production start-up checks; verify migrations, backups and restore.
 - [ ] Configure verified email sender and run delivery/session staging checks.
 - [ ] Apply migration 011 and review any earlier CSV-only records downgraded from settled to pending.
 - [ ] Apply migration 012 (TOTP replay guard, `offer_conflict` exception kind, non-charge provider events marked ignored) and grant `ops:seller:approve` to the operators who approve seller payouts.

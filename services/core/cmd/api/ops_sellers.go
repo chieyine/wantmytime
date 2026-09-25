@@ -22,7 +22,7 @@ func (a *API) opsSetPayoutReadiness(w http.ResponseWriter, r *http.Request) {
 		Reason string `json:"reason"`
 	}
 	if decode(r, &in) != nil || len(strings.TrimSpace(in.Reason)) < 8 || len(in.Reason) > 300 {
-		problem(w, 422, "REASON_REQUIRED", "Record which identity and bank evidence was reviewed.")
+		problem(w, 422, "REASON_REQUIRED", "Give a reason (at least 8 characters) for the audit log.")
 		return
 	}
 	id := r.PathValue("id")
@@ -46,7 +46,9 @@ func (a *API) opsSetPayoutReadiness(w http.ResponseWriter, r *http.Request) {
 		problem(w, 422, "PAYOUT_ACCOUNT_REQUIRED", "The seller must add a verified bank account before taking paid bookings.")
 		return
 	}
-	state := "incomplete"
+	// Sellers open themselves once their bank account is confirmed; an
+	// operator's "not ready" is a hold that stays until an operator lifts it.
+	state := "held"
 	if in.Ready {
 		state = "ready"
 	}

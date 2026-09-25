@@ -22,13 +22,17 @@ func (a *API) routes() http.Handler {
 	}
 	// Generous per-IP ceilings: mobile carriers put many people behind one
 	// address. Per-email limits in createChallenge still apply.
-	challengeLimit := newRateLimiter(30, time.Minute)
-	analyticsLimit := newRateLimiter(120, time.Minute)
+	challengeLimit := a.limiter("challenge", 30, time.Minute)
+	analyticsLimit := a.limiter("analytics", 120, time.Minute)
+	publicLimit := a.limiter("public_read", 300, time.Minute)
+	checkoutLimit := a.limiter("checkout", 20, time.Minute)
+	uploadLimit := a.limiter("upload", 10, 10*time.Minute)
+	writeLimit := a.limiter("write", 120, time.Minute)
 	handle("GET /health", a.health)
-	handle("GET /api/v1/handles/{handle}/availability", a.availability)
-	handle("GET /api/v1/people/{handle}", a.publicPerson)
-	handle("GET /api/v1/people/{handle}/avatar", a.publicAvatar)
-	handle("GET /api/v1/people/{handle}/slots", a.publicSlots)
+	handle("GET /api/v1/handles/{handle}/availability", a.rateLimited(publicLimit, a.availability))
+	handle("GET /api/v1/people/{handle}", a.rateLimited(publicLimit, a.publicPerson))
+	handle("GET /api/v1/people/{handle}/avatar", a.rateLimited(publicLimit, a.publicAvatar))
+	handle("GET /api/v1/people/{handle}/slots", a.rateLimited(publicLimit, a.publicSlots))
 	handle("GET /api/v1/runtime", func(w http.ResponseWriter, _ *http.Request) {
 		jsonOut(w, 200, map[string]bool{"local_payment_simulator": a.localPaymentSimulatorEnabled(), "provider_checkout_enabled": a.providerCheckoutConfigured()})
 	})
@@ -37,20 +41,24 @@ func (a *API) routes() http.Handler {
 	handle("POST /api/v1/auth/logout", a.logout)
 	handle("GET /api/v1/me", a.me)
 	handle("GET /api/v1/me/sessions", a.mySessions)
+	handle("GET /api/v1/me/data-export", a.dataExport)
+	handle("GET /api/v1/me/deletion", a.deletionCheck)
+	handle("POST /api/v1/me/deletion", a.rateLimited(challengeLimit, a.deleteAccount))
 	handle("POST /api/v1/me/sessions/revoke-others", a.revokeOtherSessions)
 	handle("GET /api/v1/me/settlements", a.mySettlements)
 	handle("GET /api/v1/me/settlements/{id}", a.mySettlementDetail)
 	handle("GET /api/v1/me/link", a.getOwnProfile)
 	handle("POST /api/v1/me/link", a.claimProfile)
 	handle("PATCH /api/v1/me/link", a.updateProfile)
-	handle("PUT /api/v1/me/avatar", a.updateAvatar)
+	handle("PUT /api/v1/me/avatar", a.rateLimited(uploadLimit, a.updateAvatar))
 	handle("DELETE /api/v1/me/avatar", a.deleteAvatar)
 	handle("GET /api/v1/me/availability", a.getAvailability)
 	handle("PUT /api/v1/me/availability", a.putAvailability)
 	handle("PUT /api/v1/me/availability/overrides/{date}", a.putAvailabilityOverride)
 	handle("DELETE /api/v1/me/availability/overrides/{date}", a.deleteAvailabilityOverride)
-	handle("POST /api/v1/bookings", a.createBooking)
-	handle("POST /api/v1/quotes", a.createQuote)
+	handle("POST /api/v1/bookings", a.rateLimited(checkoutLimit, a.createBooking))
+	handle("POST /api/v1/bookings/start", a.rateLimited(checkoutLimit, a.startGuestBooking))
+	handle("POST /api/v1/quotes", a.rateLimited(checkoutLimit, a.createQuote))
 	handle("GET /api/v1/quotes/{id}", a.getQuote)
 	handle("POST /api/v1/dev/quotes/{id}/simulate-payment", a.simulatePayment)
 	handle("GET /api/v1/me/bookings", a.listBookings)
@@ -65,21 +73,22 @@ func (a *API) routes() http.Handler {
 	handle("POST /api/v1/bookings/{id}/cancellation", a.requestCancellation)
 	handle("POST /api/v1/bookings/{id}/completion", a.completeBooking)
 	handle("GET /api/v1/bookings/{id}/calendar", a.bookingCalendar)
-	handle("POST /api/v1/offers", a.createOffer)
+	handle("POST /api/v1/offers", a.rateLimited(checkoutLimit, a.createOffer))
 	handle("GET /api/v1/me/offers", a.listOffers)
 	handle("GET /api/v1/offers/{id}", a.getOffer)
-	handle("POST /api/v1/offers/{id}/checkout", a.createOfferQuote)
+	handle("POST /api/v1/offers/{id}/checkout", a.rateLimited(checkoutLimit, a.createOfferQuote))
 	handle("POST /api/v1/offers/{id}/accept", a.offerRespond("accept"))
 	handle("POST /api/v1/offers/{id}/counter", a.offerRespond("counter"))
 	handle("POST /api/v1/offers/{id}/decline", a.offerRespond("decline"))
 	handle("POST /api/v1/offers/{id}/withdraw", a.offerRespond("withdraw"))
 	handle("POST /api/v1/access/challenges", a.rateLimited(challengeLimit, a.createAccessChallenge))
-	handle("POST /api/v1/quotes/{id}/checkout", a.initializeQuoteCheckout)
-	handle("POST /api/v1/quotes/{id}/verify-payment", a.verifyQuotePayment)
+	handle("POST /api/v1/quotes/{id}/checkout", a.rateLimited(checkoutLimit, a.initializeQuoteCheckout))
+	handle("POST /api/v1/quotes/{id}/verify-payment", a.rateLimited(checkoutLimit, a.verifyQuotePayment))
 	handle("POST /api/v1/webhooks/kora", a.koraWebhook)
 	handle("POST /api/v1/ops/session", a.opsSession)
 	handle("GET /api/v1/ops/overview", a.opsOverview)
 	handle("GET /api/v1/ops/growth", a.opsGrowth)
+	handle("GET /api/v1/ops/funnels", a.opsFunnels)
 	handle("GET /api/v1/ops/system", a.opsSystem)
 	handle("GET /api/v1/ops/provider-events", a.opsProviderEvents)
 	handle("GET /api/v1/ops/provider-cases", a.opsProviderCases)
@@ -118,7 +127,7 @@ func (a *API) routes() http.Handler {
 	handle("POST /api/v1/bookings/{id}/no-show/dispute", a.disputeNoShow)
 	handle("POST /api/v1/bookings/{id}/review", a.createReview)
 	handle("POST /api/v1/reviews/{id}/reply", a.replyToReview)
-	handle("GET /api/v1/people/{handle}/reviews", a.publicReviews)
+	handle("GET /api/v1/people/{handle}/reviews", a.rateLimited(publicLimit, a.publicReviews))
 	handle("GET /api/v1/me/cancellation-policy", a.getCancellationPolicy)
 	handle("PUT /api/v1/me/cancellation-policy", a.setCancellationPolicy)
 	handle("GET /api/v1/me/refund-recoveries", a.myRecoveries)
@@ -149,7 +158,7 @@ func (a *API) routes() http.Handler {
 		metrics = observe.NewMetrics()
 		a.metrics = metrics
 	}
-	return observe.Middleware(secureHeaders(a.cors(mux)), a.log(), a.reporter, metrics)
+	return observe.Middleware(secureHeaders(a.cors(a.writeLimited(writeLimit, mux))), a.log(), a.reporter, metrics)
 }
 
 func (a *API) health(w http.ResponseWriter, r *http.Request) {
@@ -194,11 +203,21 @@ func (a *API) cors(next http.Handler) http.Handler {
 	})
 }
 
+// secureHeaders applies to every API response. The API only returns JSON,
+// calendar files and profile photos, so its policy forbids everything else.
 func secureHeaders(next http.Handler) http.Handler {
+	hsts := os.Getenv("APP_ENV") == "production"
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-		w.Header().Set("X-Frame-Options", "DENY")
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
+		h.Set("Cross-Origin-Resource-Policy", "same-site")
+		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+		if hsts {
+			h.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
+		}
 		next.ServeHTTP(w, r)
 	})
 }

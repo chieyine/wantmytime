@@ -6,7 +6,7 @@ SELECT EXISTS (
 )::boolean AS owned;
 
 -- name: LockPaymentAttemptByReference :one
-SELECT id, quote_id, expected_minor, currency, canonical_state, approved_fee_minor, fee_basis_points, provider_transaction_id, booking_id, COALESCE(channel, '')::text AS channel
+SELECT id, quote_id, expected_minor, currency, canonical_state, approved_fee_minor, fee_basis_points, provider_transaction_id, booking_id, COALESCE(channel, '')::text AS channel, buyer_fee_minor
 FROM payment_attempts
 WHERE provider = 'kora' AND environment = sqlc.arg(environment) AND merchant_reference = sqlc.arg(reference)
 FOR UPDATE;
@@ -55,9 +55,10 @@ FOR UPDATE OF sp;
 SELECT state FROM offers WHERE id = sqlc.arg(id) FOR UPDATE;
 
 -- name: VerifiedEmailForUser :one
+-- The buyer's email, confirmed or not (buyers may pay before confirming it).
 SELECT normalized_identifier FROM user_identities
-WHERE user_id = sqlc.arg(user_id) AND type = 'email' AND verified_at IS NOT NULL
-ORDER BY verified_at DESC LIMIT 1;
+WHERE user_id = sqlc.arg(user_id) AND type = 'email'
+ORDER BY verified_at DESC NULLS LAST LIMIT 1;
 
 -- name: CreatePaidBookingFromQuote :execrows
 INSERT INTO bookings(id, quote_id, seller_id, buyer_user_id, buyer_name, guest_email, duration_minutes, starts_at, gross_minor, currency, state, payment_state, quote_snapshot, meeting_deadline)

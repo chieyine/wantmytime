@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"image"
@@ -12,6 +15,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -72,7 +76,7 @@ func (a *API) availability(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var taken bool
-	e := a.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM seller_profiles WHERE handle=$1)`, h).Scan(&taken)
+	e := a.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM seller_profiles WHERE handle=$1) OR EXISTS(SELECT 1 FROM handle_holds WHERE handle=$1 AND held_until>now())`, h).Scan(&taken)
 	if e != nil {
 		problem(w, 503, "DATABASE_ERROR", "Availability could not be checked.")
 		return
@@ -120,9 +124,9 @@ func (a *API) publicAvatar(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	var mime string
+	var mime, key string
 	var data []byte
-	err := a.db.QueryRow(r.Context(), `SELECT sp.avatar_mime,sp.avatar_data FROM seller_profiles sp WHERE sp.handle=$1 AND sp.publication_state='published' AND sp.avatar_data IS NOT NULL AND sp.avatar_version=$2`, h, version).Scan(&mime, &data)
+	err := a.db.QueryRow(r.Context(), `SELECT sp.avatar_mime,sp.avatar_data,COALESCE(sp.avatar_key,'') FROM seller_profiles sp WHERE sp.handle=$1 AND sp.publication_state='published' AND sp.avatar_mime IS NOT NULL AND sp.avatar_version=$2`, h, version).Scan(&mime, &data, &key)
 	if errors.Is(err, pgx.ErrNoRows) {
 		http.NotFound(w, r)
 		return
@@ -130,6 +134,28 @@ func (a *API) publicAvatar(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		problem(w, 503, "DATABASE_ERROR", "The profile image could not be loaded.")
 		return
+	}
+	if key != "" {
+		if a.media == nil {
+			problem(w, 503, "MEDIA_UNAVAILABLE", "The profile image could not be loaded.")
+			return
+		}
+		// A public bucket domain serves the file straight from Cloudflare's edge.
+		if public := a.media.publicURL(key); public != "" {
+			w.Header().Set("Cache-Control", "public, max-age=300")
+			http.Redirect(w, r, public, http.StatusFound)
+			return
+		}
+		data, _, err = a.media.get(r.Context(), key, 512<<10)
+		if errors.Is(err, errObjectNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		if err != nil {
+			a.log().WarnContext(r.Context(), "profile image fetch failed", "error", err.Error())
+			problem(w, 503, "MEDIA_UNAVAILABLE", "The profile image could not be loaded.")
+			return
+		}
 	}
 	w.Header().Set("Content-Type", mime)
 	w.Header().Set("Cache-Control", "public, max-age=300, stale-while-revalidate=3600")
@@ -193,12 +219,47 @@ func (a *API) updateAvatar(w http.ResponseWriter, r *http.Request) {
 	}
 	const mime = "image/png"
 	var avatarVersion int64
-	err = a.db.QueryRow(r.Context(), `UPDATE seller_profiles SET avatar_mime=$2,avatar_data=$3,avatar_version=avatar_version+1,public_version=public_version+1 WHERE id=$1 RETURNING avatar_version`, sid, mime, clean.Bytes()).Scan(&avatarVersion)
+	var oldKey string
+	if err = a.db.QueryRow(r.Context(), `SELECT COALESCE(avatar_key,'') FROM seller_profiles WHERE id=$1`, sid).Scan(&oldKey); err != nil {
+		problem(w, 503, "DATABASE_ERROR", "The profile image could not be saved.")
+		return
+	}
+	if a.media != nil {
+		// Each upload gets a new unguessable name, so the file can be cached forever.
+		key := "avatars/" + sid + "/" + randomHex(16) + ".png"
+		if err = a.media.put(r.Context(), key, mime, "public, max-age=31536000, immutable", clean.Bytes()); err != nil {
+			a.log().WarnContext(r.Context(), "profile image upload failed", "error", err.Error())
+			problem(w, 503, "MEDIA_UNAVAILABLE", "The profile image could not be saved. Try again shortly.")
+			return
+		}
+		err = a.db.QueryRow(r.Context(), `UPDATE seller_profiles SET avatar_mime=$2,avatar_data=NULL,avatar_key=$3,avatar_version=avatar_version+1,public_version=public_version+1 WHERE id=$1 RETURNING avatar_version`, sid, mime, key).Scan(&avatarVersion)
+		if err != nil {
+			a.removeMedia(key)
+		}
+	} else {
+		err = a.db.QueryRow(r.Context(), `UPDATE seller_profiles SET avatar_mime=$2,avatar_data=$3,avatar_key=NULL,avatar_version=avatar_version+1,public_version=public_version+1 WHERE id=$1 RETURNING avatar_version`, sid, mime, clean.Bytes()).Scan(&avatarVersion)
+	}
 	if err != nil {
 		problem(w, 503, "DATABASE_ERROR", "The profile image could not be saved.")
 		return
 	}
+	a.removeMedia(oldKey)
 	jsonOut(w, 200, map[string]any{"url": "/api/v1/people/" + url.PathEscape(handle) + "/avatar", "mime_type": mime, "avatar_version": avatarVersion})
+}
+
+// removeMedia deletes a replaced file in the background. A failure only
+// leaves an orphan that nothing links to.
+func (a *API) removeMedia(key string) {
+	if key == "" || a.media == nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := a.media.delete(ctx, key); err != nil {
+			a.log().Warn("old profile image not removed", "key", key, "error", err.Error())
+		}
+	}()
 }
 
 func (a *API) deleteAvatar(w http.ResponseWriter, r *http.Request) {
@@ -206,11 +267,13 @@ func (a *API) deleteAvatar(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, err := a.db.Exec(r.Context(), `UPDATE seller_profiles SET avatar_mime=NULL,avatar_data=NULL,avatar_version=avatar_version+1,public_version=public_version+1 WHERE user_id=$1`, u.ID)
-	if err != nil {
+	var oldKey string
+	err := a.db.QueryRow(r.Context(), `UPDATE seller_profiles sp SET avatar_mime=NULL,avatar_data=NULL,avatar_key=NULL,avatar_version=avatar_version+1,public_version=public_version+1 FROM (SELECT id,avatar_key FROM seller_profiles WHERE user_id=$1 FOR UPDATE) old WHERE sp.id=old.id RETURNING COALESCE(old.avatar_key,'')`, u.ID).Scan(&oldKey)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		problem(w, 503, "DATABASE_ERROR", "The profile image could not be removed.")
 		return
 	}
+	a.removeMedia(oldKey)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -298,6 +361,15 @@ func (a *API) claimProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	} else if !errors.Is(e, pgx.ErrNoRows) {
 		problem(w, 503, "DATABASE_ERROR", "Profile could not be saved.")
+		return
+	}
+	var held bool
+	if e = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM handle_holds WHERE handle=$1 AND held_until>now())`, p.Handle).Scan(&held); e != nil {
+		problem(w, 503, "DATABASE_ERROR", "Profile could not be saved.")
+		return
+	}
+	if held {
+		problem(w, 409, "HANDLE_TAKEN", "That link is already claimed.")
 		return
 	}
 	if _, e = tx.Exec(r.Context(), `UPDATE users SET display_name=$2 WHERE id=$1`, u.ID, p.Name); e != nil {
@@ -425,4 +497,12 @@ func (a *API) updateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonOut(w, 200, p)
+}
+
+func randomHex(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b)
 }

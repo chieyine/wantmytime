@@ -157,7 +157,11 @@ func (a *API) applyVerifiedCharge(ctx context.Context, reference string, provide
 	expectedCurrency := strings.TrimSpace(attempt.Currency)
 	platformFee := *attempt.ApprovedFeeMinor
 	bps := *attempt.FeeBasisPoints
-	if platformFee < 0 || platformFee > expected || bps < 0 || bps > 500 {
+	// expected is what the buyer sent: the seller's price plus the transfer
+	// fee the buyer paid on top.
+	buyerFee := attempt.BuyerFeeMinor
+	price := expected - buyerFee
+	if buyerFee < 0 || price <= 0 || platformFee < 0 || platformFee > price || bps < 0 || bps > 500 {
 		return "", errors.New("payment attempt has invalid immutable fee snapshot")
 	}
 	var txn *string
@@ -204,7 +208,7 @@ func (a *API) applyVerifiedCharge(ctx context.Context, reference string, provide
 	if provider.FeeMinor < 0 {
 		return exception("settlement_mismatch", provider.FeeMinor, expectedCurrency, "Verified processor cost is negative.")
 	}
-	if provider.FeeMinor > platformFee {
+	if provider.FeeMinor > platformFee+buyerFee {
 		// A card issued abroad costs more than a local one, and the checkout
 		// could not know which card the buyer would use. When international
 		// cards are enabled and the fee fits the approved international
@@ -288,13 +292,13 @@ func (a *API) applyVerifiedCharge(ctx context.Context, reference string, provide
 	if err = q.RecordServerProductEvent(ctx, store.RecordServerProductEventParams{EventName: "verified_booking_paid", SubjectHash: analyticsSubjectHash(quote.BuyerUserID), Environment: environmentOf(a), SellerID: &sellerID}); err != nil {
 		return "", err
 	}
-	if err = q.CreatePaymentAllocation(ctx, store.CreatePaymentAllocationParams{BookingID: bookingID, GrossMinor: expected, DeductionMinor: platformFee, SellerEntitlementMinor: expected - platformFee, ProcessorCostMinor: provider.FeeMinor, Environment: environmentOf(a), Reference: reference, FeeBasisPoints: bps}); err != nil {
+	if err = q.CreatePaymentAllocation(ctx, store.CreatePaymentAllocationParams{BookingID: bookingID, GrossMinor: price, DeductionMinor: platformFee, SellerEntitlementMinor: price - platformFee, ProcessorCostMinor: provider.FeeMinor, Environment: environmentOf(a), Reference: reference, FeeBasisPoints: bps}); err != nil {
 		return "", err
 	}
 	if err = q.CreateSettlementItemForBooking(ctx, store.CreateSettlementItemForBookingParams{Reference: reference, BookingID: bookingID}); err != nil {
 		return "", err
 	}
-	if err = scheduleSellerPayout(ctx, tx, "kora", bookingID, sellerID, expected-platformFee, expectedCurrency, fundsAvailableAt(channel, time.Now())); err != nil {
+	if err = scheduleSellerPayout(ctx, tx, "kora", bookingID, sellerID, price-platformFee, expectedCurrency, fundsAvailableAt(channel, time.Now())); err != nil {
 		return "", err
 	}
 	if err = q.MarkPaymentAttemptSuccess(ctx, store.MarkPaymentAttemptSuccessParams{BookingID: &bookingID, TransactionID: txn, ID: attempt.ID}); err != nil {
@@ -319,11 +323,12 @@ func (a *API) applyVerifiedCharge(ctx context.Context, reference string, provide
 	if provider.FeeMinor > 0 {
 		lines = append(lines, ledgerLine{AccountCode: "processor_fee_expense", Side: "debit", Amount: provider.FeeMinor})
 	}
-	if platformFee > 0 {
-		lines = append(lines, ledgerLine{AccountCode: "platform_fee_revenue", Side: "credit", Amount: platformFee})
+	// The buyer's transfer fee is platform income that pays the processor.
+	if platformFee+buyerFee > 0 {
+		lines = append(lines, ledgerLine{AccountCode: "platform_fee_revenue", Side: "credit", Amount: platformFee + buyerFee})
 	}
-	if expected-platformFee > 0 {
-		lines = append(lines, ledgerLine{AccountCode: "seller_payable", ScopeID: &sellerID, Side: "credit", Amount: expected - platformFee})
+	if price-platformFee > 0 {
+		lines = append(lines, ledgerLine{AccountCode: "seller_payable", ScopeID: &sellerID, Side: "credit", Amount: price - platformFee})
 	}
 	if _, err = postLedgerJournal(ctx, tx, "payment_attempt", attempt.ID, expectedCurrency, "verified payment", lines); err != nil {
 		return "", err
