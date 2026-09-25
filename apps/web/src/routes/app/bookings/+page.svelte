@@ -1,26 +1,16 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
 	import { formatMoney } from '$lib/money';
 	import CursorPager from '$lib/components/CursorPager.svelte';
 
 	let { data } = $props();
 	let ownHandle = $derived((data.account as { handle: string }).handle);
-	type Booking = {
-		id: string;
-		seller: string;
-		buyer: string;
-		duration_minutes: number;
-		starts_at: string;
-		amount_minor: number;
-		state: string;
-		payment_state: string;
-		currency?: string;
-	};
-	let bookings = $state<Booking[]>([]);
-	let loading = $state(true);
-	let message = $state('');
-	let nextCursor = $state('');
+	import type { Booking } from './+page';
+	// The first page arrives with the route; "load more" appends to it.
+	let bookings = $derived(data.bookings);
+	let loading = $state(false);
+	let message = $derived(data.loadError);
+	let nextCursor = $derived(data.nextCursor);
 	let filter = $state<'attention' | 'upcoming' | 'all'>('attention');
 	const upcoming = (booking: Booking) =>
 		booking.state === 'confirmed' && new Date(booking.starts_at).getTime() > Date.now();
@@ -50,9 +40,6 @@
 			loading = false;
 		}
 	}
-	onMount(() => {
-		void load();
-	});
 	const dateLabel = (value: string) =>
 		new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 	function status(booking: Booking) {

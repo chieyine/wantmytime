@@ -1,19 +1,10 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { api } from '$lib/api';
 
-	type Calendar = {
-		configured: boolean;
-		connected: boolean;
-		account_email?: string;
-		check_busy?: boolean;
-		add_events?: boolean;
-		create_meet_links?: boolean;
-		status?: 'active' | 'error' | 'revoked';
-		last_error?: string | null;
-		last_synced_at?: string | null;
-	};
+	import type { Calendar } from './+page';
+	let { data } = $props();
 
 	const outcomes: Record<string, { tone: 'info' | 'warning'; text: string }> = {
 		connected: {
@@ -30,7 +21,7 @@
 	};
 
 	let calendar = $state<Calendar | null>(null);
-	let message = $state('');
+	let message = $state(untrack(() => data.loadError));
 	let busy = $state(false);
 	let outcome = $derived(outcomes[page.url.searchParams.get('google') ?? '']);
 	let checkBusy = $state(true);
@@ -44,6 +35,10 @@
 		meetLinks = c.create_meet_links ?? true;
 	}
 
+	untrack(() => {
+		if (data.calendar) apply(data.calendar);
+	});
+
 	async function load() {
 		try {
 			apply(await api<Calendar>('/api/v1/me/calendar'));
@@ -51,7 +46,6 @@
 			message = e instanceof Error ? e.message : 'Calendar status could not be loaded.';
 		}
 	}
-	onMount(load);
 
 	async function connect() {
 		busy = true;

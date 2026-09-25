@@ -2,7 +2,6 @@
 	import { linkLabel } from '$lib/handle';
 	import { onMount } from 'svelte';
 	import { env } from '$env/dynamic/public';
-	import { api } from '$lib/api';
 	import { formatMoney } from '$lib/money';
 	import PushToggle from '$lib/components/PushToggle.svelte';
 	import { refreshPush } from '$lib/push';
@@ -10,35 +9,16 @@
 	let account = $derived(data.account as { name: string; email: string; handle: string });
 	let copied = $state(false);
 	let copyError = $state('');
-	type Booking = {
-		id: string;
-		seller: string;
-		buyer: string;
-		duration_minutes: number;
-		starts_at: string;
-		state: string;
-		payment_state: string;
-	};
-	type Offer = {
-		id: string;
-		seller: string;
-		buyer_name: string;
-		amount_minor: string;
-		state: string;
-		role: 'seller' | 'buyer';
-		expires_at: string;
-		currency?: string;
-	};
-	let bookings = $state<Booking[]>([]);
-	let offers = $state<Offer[]>([]);
-	let windowCount = $state<number | null>(null);
-	let profileReady = $state<boolean | null>(null);
-	let profilePaused = $state(false);
-	let hasBank = $state<boolean | null>(null);
-	let onTheWay = $state<number | null>(null);
-	let currency = $state('NGN');
-	let overviewLoading = $state(true);
-	let overviewError = $state(false);
+	let o = $derived(data.overview);
+	let bookings = $derived(o?.bookings ?? []);
+	let offers = $derived(o?.offers ?? []);
+	let windowCount = $derived(o?.windowCount ?? null);
+	let profileReady = $derived(o?.profileReady ?? null);
+	let profilePaused = $derived(o?.profilePaused ?? false);
+	let hasBank = $derived(o?.hasBank ?? null);
+	let onTheWay = $derived(o?.onTheWay ?? null);
+	let currency = $derived(o?.currency ?? 'NGN');
+	let overviewError = $derived(o?.failed ?? false);
 	let link = $derived(
 		account.handle
 			? `${(env.PUBLIC_APP_ORIGIN || (typeof window === 'undefined' ? '' : window.location.origin)).replace(/\/$/, '')}/${account.handle}`
@@ -88,32 +68,8 @@
 						? 'TURN BOOKINGS BACK ON'
 						: 'SHARE YOUR LINK'
 	);
-	onMount(async () => {
+	onMount(() => {
 		void refreshPush().catch(() => undefined);
-		if (!account.handle) {
-			overviewLoading = false;
-			return;
-		}
-		const results = await Promise.allSettled([
-			api<{ ready: boolean; paused: boolean; currency?: string }>('/api/v1/me/link'),
-			api<{ windows: unknown[] }>('/api/v1/me/availability'),
-			api<{ bookings: Booking[] }>('/api/v1/me/bookings'),
-			api<{ offers: Offer[] }>('/api/v1/me/offers'),
-			api<{ account: unknown | null }>('/api/v1/me/payout-account'),
-			api<{ upcoming_minor: number }>('/api/v1/me/payouts')
-		]);
-		if (results[0].status === 'fulfilled') {
-			profileReady = results[0].value.ready;
-			profilePaused = results[0].value.paused;
-			currency = results[0].value.currency || 'NGN';
-		}
-		if (results[1].status === 'fulfilled') windowCount = results[1].value.windows.length;
-		if (results[2].status === 'fulfilled') bookings = results[2].value.bookings;
-		if (results[3].status === 'fulfilled') offers = results[3].value.offers;
-		if (results[4].status === 'fulfilled') hasBank = results[4].value.account !== null;
-		if (results[5].status === 'fulfilled') onTheWay = results[5].value.upcoming_minor;
-		overviewError = results.some((result) => result.status === 'rejected');
-		overviewLoading = false;
 	});
 	const dateLabel = (value: string) =>
 		new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
@@ -169,30 +125,14 @@
 				<li>
 					<span>02</span><span
 						>Your hours <b
-							>{!account.handle
-								? 'After your link'
-								: windowCount === null
-									? overviewLoading
-										? 'Checking'
-										: '—'
-									: windowCount > 0
-										? 'Set'
-										: 'To do'}</b
+							>{!account.handle ? 'After your link' : windowCount === null ? '—' : windowCount > 0 ? 'Set' : 'To do'}</b
 						></span
 					>
 				</li>
 				<li>
 					<span>03</span><span
 						>Payout account <b
-							>{!account.handle
-								? 'After your link'
-								: hasBank === null
-									? overviewLoading
-										? 'Checking'
-										: '—'
-									: hasBank
-										? 'Added'
-										: 'To do'}</b
+							>{!account.handle ? 'After your link' : hasBank === null ? '—' : hasBank ? 'Added' : 'To do'}</b
 						></span
 					>
 				</li>
@@ -206,24 +146,18 @@
 			<p class="workspace-kicker">UP NEXT <span>03</span></p>
 			<a href={nextBooking ? `/app/bookings/${encodeURIComponent(nextBooking.id)}` : '/app/bookings'}
 				><span>NEXT BOOKING</span><strong
-					>{overviewLoading
-						? 'Checking…'
-						: nextBooking
-							? `${nextBooking.buyer} · ${dateLabel(nextBooking.starts_at)}`
-							: 'Nothing booked yet'}</strong
+					>{nextBooking ? `${nextBooking.buyer} · ${dateLabel(nextBooking.starts_at)}` : 'Nothing booked yet'}</strong
 				><b aria-hidden="true">↗</b></a
 			><a href={nextOffer ? `/app/offers/${encodeURIComponent(nextOffer.id)}` : '/app/offers'}
 				><span>OFFERS TO ANSWER</span><strong
-					>{overviewLoading
-						? 'Checking…'
-						: nextOffer
-							? `${nextOffer.buyer_name} · ${formatMoney(Number(nextOffer.amount_minor), nextOffer.currency)}`
-							: 'No offers waiting'}</strong
+					>{nextOffer
+						? `${nextOffer.buyer_name} · ${formatMoney(Number(nextOffer.amount_minor), nextOffer.currency)}`
+						: 'No offers waiting'}</strong
 				><b aria-hidden="true">↗</b></a
 			><a href="/app/money"
-				><span>ON THE WAY TO YOU</span><strong
-					>{onTheWay === null ? (overviewLoading ? 'Checking…' : '—') : formatMoney(onTheWay, currency)}</strong
-				><b aria-hidden="true">↗</b></a
+				><span>ON THE WAY TO YOU</span><strong>{onTheWay === null ? '—' : formatMoney(onTheWay, currency)}</strong><b
+					aria-hidden="true">↗</b
+				></a
 			>
 		</aside>
 	</div>

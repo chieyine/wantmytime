@@ -1,31 +1,14 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { api } from '$lib/api';
 	import { currencySymbol, formatMoney, parseMoneyToMinor } from '$lib/money';
 	import { viewerTimeZone, todayIn, timeOnly } from '$lib/time';
-	let { params } = $props();
-	type Offer = {
-		id: string;
-		seller: string;
-		seller_name?: string;
-		buyer_name: string;
-		duration_minutes: number;
-		state: string;
-		version: number;
-		amount_minor: string;
-		expires_at: string;
-		checkout_expires_at: string | null;
-		role: 'seller' | 'buyer';
-		local_simulator?: boolean;
-		provider_checkout_enabled?: boolean;
-		timezone?: string;
-		currency?: string;
-	};
-	let offer = $state<Offer | null>(null);
-	let loading = $state(true);
+	import type { Offer } from './+page';
+	let { params, data } = $props();
+	let offer = $state<Offer | null>(untrack(() => data.offer));
 	let busy = $state(false);
-	let message = $state('');
-	let counterAmount = $state('');
+	let message = $state(untrack(() => data.loadError));
+	let counterAmount = $state(untrack(() => (data.offer ? String(Number(data.offer.amount_minor) / 100) : '')));
 	let day = $state('');
 	let selected = $state('');
 	let checkoutKey = $state('');
@@ -33,23 +16,26 @@
 	const zone = viewerTimeZone();
 	const currency = $derived(offer?.currency || 'NGN');
 	const money = (minor: number | string) => formatMoney(minor, currency);
+	// After the offer changes, pick up its new state; an agreed offer shows times to pick.
+	async function afterLoad() {
+		if (
+			offer &&
+			offer.state === 'agreed' &&
+			offer.role === 'buyer' &&
+			(offer.local_simulator || offer.provider_checkout_enabled) &&
+			!day
+		) {
+			day = todayIn(zone);
+			await loadSlots();
+		}
+	}
 	async function load() {
 		try {
 			offer = await api<Offer>(`/api/v1/offers/${encodeURIComponent(params.id)}`);
 			counterAmount = String(Number(offer.amount_minor) / 100);
-			if (
-				offer.state === 'agreed' &&
-				offer.role === 'buyer' &&
-				(offer.local_simulator || offer.provider_checkout_enabled) &&
-				!day
-			) {
-				day = todayIn(zone);
-				await loadSlots();
-			}
+			await afterLoad();
 		} catch (error) {
 			message = error instanceof Error ? error.message : 'This offer could not be loaded.';
-		} finally {
-			loading = false;
 		}
 	}
 	async function loadSlots() {
@@ -67,7 +53,7 @@
 			message = error instanceof Error ? error.message : 'Times could not be loaded.';
 		}
 	}
-	onMount(load);
+	onMount(afterLoad);
 	async function act(action: 'accept' | 'counter' | 'decline' | 'withdraw') {
 		if (!offer) return;
 		message = '';
@@ -121,8 +107,7 @@
 	<a class="back-link" href="/app/offers">← Offers</a>
 	<p class="eyebrow">Offer detail</p>
 	<h1 class="page-heading">A THOUGHTFUL<br />REQUEST.</h1>
-	{#if loading}<p class="page-intro">Loading this private offer…</p>
-	{:else if !offer}<div class="notice notice-warning">{message}</div>
+	{#if !offer}<div class="notice notice-warning">{message}</div>
 	{:else}
 		{#key offer.state}<div class="offer-detail-priority">
 				<span>{offer.state.replaceAll('_', ' ').toUpperCase()} / VERSION {offer.version}</span><strong

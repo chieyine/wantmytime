@@ -1,25 +1,15 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
 	import { formatMoney } from '$lib/money';
 	import CursorPager from '$lib/components/CursorPager.svelte';
 
-	type Offer = {
-		id: string;
-		seller: string;
-		buyer_name: string;
-		duration_minutes: number;
-		state: string;
-		version: number;
-		expires_at: string;
-		amount_minor: string;
-		role: 'seller' | 'buyer';
-		currency?: string;
-	};
-	let offers = $state<Offer[]>([]);
-	let loading = $state(true);
-	let message = $state('');
-	let nextCursor = $state('');
+	import type { Offer } from './+page';
+	let { data } = $props();
+	// The first page arrives with the route; "load more" appends to it.
+	let offers = $derived(data.offers);
+	let loading = $state(false);
+	let message = $derived(data.loadError);
+	let nextCursor = $derived(data.nextCursor);
 	let filter = $state<'respond' | 'active' | 'all'>('respond');
 	const canRespond = (offer: Offer) =>
 		((offer.role === 'seller' && offer.state === 'pending') ||
@@ -50,9 +40,6 @@
 			loading = false;
 		}
 	}
-	onMount(() => {
-		void load();
-	});
 	const dateLabel = (value: string) =>
 		new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value));
 	function nextAction(offer: Offer) {

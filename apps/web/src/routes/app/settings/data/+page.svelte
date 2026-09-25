@@ -1,23 +1,12 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { api } from '$lib/api';
-	type Check = { can_delete: boolean; blockers: string[]; email: string };
-	let check = $state<Check | null>(null);
-	let loadError = $state('');
+	let { data } = $props();
+	let check = $derived(data.check);
+	let loadError = $derived(data.loadError);
 	let confirmEmail = $state('');
 	let busy = $state(false);
 	let message = $state('');
-	let blockers = $state<string[]>([]);
+	let blockers = $derived(data.check?.blockers ?? []);
 	let matches = $derived(!!check && confirmEmail.trim().toLowerCase() === check.email.toLowerCase());
-
-	onMount(async () => {
-		try {
-			check = await api<Check>('/api/v1/me/deletion');
-			blockers = check.blockers;
-		} catch (e) {
-			loadError = e instanceof Error ? e.message : 'Your account could not be checked.';
-		}
-	});
 
 	async function deleteAccount(event: SubmitEvent) {
 		event.preventDefault();

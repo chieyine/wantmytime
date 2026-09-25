@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
-	type Session = { current: boolean; created_at: string; expires_at: string; operations_verified: boolean };
-	let sessions = $state<Session[]>([]);
+	import type { Session } from './+page';
+	let { data } = $props();
+	let sessions = $derived(data.sessions);
 	let busy = $state(false);
-	let message = $state('');
+	let message = $derived(data.loadError);
 	async function load() {
 		try {
 			sessions = (await api<{ sessions: Session[] }>('/api/v1/me/sessions')).sessions;
@@ -12,7 +12,6 @@
 			message = e instanceof Error ? e.message : 'Sessions could not be loaded.';
 		}
 	}
-	onMount(load);
 	async function revokeOthers() {
 		busy = true;
 		message = '';

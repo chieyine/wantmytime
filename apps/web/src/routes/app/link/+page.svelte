@@ -1,31 +1,47 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { untrack } from 'svelte';
 	import { api } from '$lib/api';
 	import { timezoneOptions } from '$lib/timezones';
 	import { currencySymbol } from '$lib/money';
 	import PublicPersonPage from '$lib/components/PublicPersonPage.svelte';
 	import { env } from '$env/dynamic/public';
 	import { handlePattern, linkLabel, validHandle } from '$lib/handle';
-	let handle = $state('');
-	let name = $state('');
-	let identity_url = $state('');
-	let mode = $state<'fixed' | 'offer' | 'both'>('fixed');
-	let amount = $state(10000);
-	let durations = $state<number[]>([15, 30, 60]);
-	let timezone = $state('UTC');
-	let currency = $state('NGN');
-	let paused = $state(false);
-	let exists = $state(false);
-	let loading = $state(true);
+	let { data } = $props();
+	// The form starts from the saved profile the route loaded, then belongs to the page while the seller edits.
+	const saved = untrack(() => data.profile);
+	let handle = $state(saved?.handle ?? '');
+	let name = $state(saved?.name ?? '');
+	let identity_url = $state(saved?.identity_url || '');
+	let mode = $state<'fixed' | 'offer' | 'both'>(saved?.mode ?? 'fixed');
+	let amount = $state(saved ? saved.base_30_minor / 100 : 10000);
+	let durations = $state<number[]>(saved?.durations ?? [15, 30, 60]);
+	let timezone = $state(saved?.timezone ?? 'UTC');
+	let currency = $state(saved?.currency || 'NGN');
+	let paused = $state(saved?.paused ?? false);
+	const exists = !!saved;
 	let saving = $state(false);
-	let message = $state('');
-	let ready = $state(false);
+	let message = $state(untrack(() => data.loadError));
+	let ready = $state(saved?.ready ?? false);
 	let activeView = $state<'edit' | 'preview'>('edit');
-	let avatarPreview = $state('');
+	let avatarPreview = $state(
+		saved?.avatar_version ? `/api/v1/people/${encodeURIComponent(saved.handle)}/avatar?v=${saved.avatar_version}` : ''
+	);
 	let avatarMessage = $state('');
 	let avatarBusy = $state(false);
 	let avatarInput = $state<HTMLInputElement>();
-	let savedFingerprint = $state('');
+	let savedFingerprint = $state(
+		saved
+			? JSON.stringify({
+					name: saved.name,
+					identity_url: saved.identity_url || '',
+					mode: saved.mode,
+					amount: saved.mode !== 'offer' ? saved.base_30_minor : 0,
+					durations: saved.durations,
+					timezone: saved.timezone,
+					paused: saved.paused
+				})
+			: ''
+	);
 	let saveState = $state<'idle' | 'saved' | 'error'>('idle');
 	let fingerprint = $derived(
 		JSON.stringify({
@@ -38,7 +54,7 @@
 			paused
 		})
 	);
-	let dirty = $derived(exists && !loading && fingerprint !== savedFingerprint);
+	let dirty = $derived(exists && fingerprint !== savedFingerprint);
 	let identityLabel = $derived.by(() => {
 		try {
 			const h = new URL(identity_url).hostname.toLowerCase().replace(/^www\./, '');
@@ -75,7 +91,7 @@
 		local_simulator: false
 	});
 	// The link itself changes on its own, because people may already have the old one.
-	let newHandle = $state('');
+	let newHandle = $state(saved?.handle ?? '');
 	let handleState = $state<'same' | 'checking' | 'available' | 'taken' | 'invalid'>('same');
 	let handleBusy = $state(false);
 	let handleMessage = $state('');
@@ -129,51 +145,6 @@
 	function toggle(d: number) {
 		durations = durations.includes(d) ? durations.filter((x) => x !== d) : [...durations, d].sort((a, b) => a - b);
 	}
-	onMount(async () => {
-		try {
-			const p = await api<{
-				handle: string;
-				name: string;
-				identity_url: string;
-				mode: 'fixed' | 'offer' | 'both';
-				base_30_minor: number;
-				durations: number[];
-				timezone: string;
-				paused: boolean;
-				ready: boolean;
-				avatar_version?: number;
-				currency?: string;
-			}>('/api/v1/me/link');
-			currency = p.currency || 'NGN';
-			handle = p.handle;
-			newHandle = p.handle;
-			name = p.name;
-			identity_url = p.identity_url || '';
-			mode = p.mode;
-			amount = p.base_30_minor / 100;
-			durations = p.durations;
-			timezone = p.timezone;
-			paused = p.paused;
-			ready = p.ready;
-			exists = true;
-			savedFingerprint = JSON.stringify({
-				name: p.name,
-				identity_url: p.identity_url || '',
-				mode: p.mode,
-				amount: p.mode !== 'offer' ? p.base_30_minor : 0,
-				durations: p.durations,
-				timezone: p.timezone,
-				paused: p.paused
-			});
-			const version = p.avatar_version || 0;
-			if (version) avatarPreview = `/api/v1/people/${encodeURIComponent(handle)}/avatar?v=${version}`;
-		} catch (error) {
-			const text = error instanceof Error ? error.message : '';
-			if (!text.includes('not claimed')) message = text || 'Your link could not be loaded.';
-		} finally {
-			loading = false;
-		}
-	});
 	async function save() {
 		if (!dirty) return;
 		saving = true;
@@ -249,8 +220,7 @@
 	<a class="back-link" href="/app">← Overview</a>
 	<p class="eyebrow">Your link</p>
 	<h1 class="page-heading">A page that sounds like you.</h1>
-	{#if loading}<p class="page-intro">Loading your link…</p>
-	{:else if !exists}<p class="page-intro">
+	{#if !exists}<p class="page-intro">
 			You have not claimed a link yet. Set up your name, link, price and conversation lengths.
 		</p>
 		<a class="button" href="/claim">Create your link ↗</a>{#if message}<div class="notice notice-warning" role="alert">

@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { untrack } from 'svelte';
 	import { api } from '$lib/api';
 	import { timezoneOptions } from '$lib/timezones';
 
-	type WindowRule = { weekday: number; start: string; end: string };
-	type Override = { date: string; closed: boolean };
+	import type { Availability, WindowRule } from './+page';
+	let { data } = $props();
 	const days = [
 		{ value: 1, short: 'MON', name: 'Monday' },
 		{ value: 2, short: 'TUE', name: 'Tuesday' },
@@ -14,22 +14,52 @@
 		{ value: 6, short: 'SAT', name: 'Saturday' },
 		{ value: 0, short: 'SUN', name: 'Sunday' }
 	];
-	let windows = $state<WindowRule[]>([]);
-	let starterHours = $state(false);
-	let overrides = $state<Override[]>([]);
+	// The form starts from what the route loaded, then belongs to the page while the seller edits.
+	function formFrom(saved: Availability | null) {
+		// Times are exchanged as HH:MM; trim seconds defensively.
+		const savedWindows = (saved?.windows ?? []).map((window) => ({
+			...window,
+			start: window.start.slice(0, 5),
+			end: window.end.slice(0, 5)
+		}));
+		const fingerprint = saved
+			? JSON.stringify({
+					windows: savedWindows,
+					timezone: saved.timezone,
+					notice: saved.minimum_notice_minutes,
+					horizon: saved.booking_horizon_days,
+					buffer: saved.buffer_minutes
+				})
+			: '';
+		// First visit: start from weekdays 9 to 5 so there is something to save, not seven empty days.
+		const starter = !!saved && savedWindows.length === 0;
+		return {
+			windows: starter ? [1, 2, 3, 4, 5].map((weekday) => ({ weekday, start: '09:00', end: '17:00' })) : savedWindows,
+			starter,
+			overrides: saved?.overrides ?? [],
+			timezone: saved?.timezone ?? 'UTC',
+			notice: saved?.minimum_notice_minutes ?? 60,
+			horizon: saved?.booking_horizon_days ?? 30,
+			buffer: saved?.buffer_minutes ?? 0,
+			fingerprint
+		};
+	}
+	const initial = untrack(() => formFrom(data.availability));
+	let windows = $state<WindowRule[]>(initial.windows);
+	let starterHours = $state(initial.starter);
+	let overrides = $state(initial.overrides);
 	let selectedDay = $state(1);
 	let overrideDate = $state('');
-	let timezone = $state('UTC');
-	let notice = $state(60);
-	let horizon = $state(30);
-	let buffer = $state(0);
-	let loading = $state(true);
-	let loaded = $state(false);
+	let timezone = $state(initial.timezone);
+	let notice = $state(initial.notice);
+	let horizon = $state(initial.horizon);
+	let buffer = $state(initial.buffer);
+	const loaded = untrack(() => data.availability !== null);
 	let saving = $state(false);
 	let overrideBusy = $state(false);
-	let message = $state('');
+	let message = $state(untrack(() => data.loadError));
 	let overrideMessage = $state('');
-	let savedFingerprint = $state('');
+	let savedFingerprint = $state(initial.fingerprint);
 	let saveState = $state<'idle' | 'saved' | 'error'>('idle');
 	let selectedName = $derived(days.find((day) => day.value === selectedDay)?.name || 'Day');
 	let selectedWindows = $derived(windows.filter((window) => window.weekday === selectedDay));
@@ -46,47 +76,6 @@
 		const end = Math.max(start, Math.min(1440, endHour * 60 + endMinute));
 		return `left:${(start / 1440) * 100}%;width:${((end - start) / 1440) * 100}%`;
 	}
-
-	onMount(async () => {
-		try {
-			const data = await api<{
-				windows: WindowRule[];
-				overrides: Override[];
-				timezone: string;
-				minimum_notice_minutes: number;
-				booking_horizon_days: number;
-				buffer_minutes: number;
-			}>('/api/v1/me/availability');
-			// Times are exchanged as HH:MM; trim seconds defensively.
-			windows = data.windows.map((window) => ({
-				...window,
-				start: window.start.slice(0, 5),
-				end: window.end.slice(0, 5)
-			}));
-			overrides = data.overrides;
-			timezone = data.timezone;
-			notice = data.minimum_notice_minutes;
-			horizon = data.booking_horizon_days;
-			buffer = data.buffer_minutes;
-			savedFingerprint = JSON.stringify({
-				windows,
-				timezone: data.timezone,
-				notice: data.minimum_notice_minutes,
-				horizon: data.booking_horizon_days,
-				buffer: data.buffer_minutes
-			});
-			// First visit: start from weekdays 9 to 5 so there is something to save, not seven empty days.
-			if (windows.length === 0) {
-				windows = [1, 2, 3, 4, 5].map((weekday) => ({ weekday, start: '09:00', end: '17:00' }));
-				starterHours = true;
-			}
-			loaded = true;
-		} catch (error) {
-			message = error instanceof Error ? error.message : 'Availability could not be loaded.';
-		} finally {
-			loading = false;
-		}
-	});
 
 	function addWindow() {
 		const latestEnd = Math.max(
@@ -179,8 +168,7 @@
 	{#if starterHours}<div class="notice notice-info">
 			We’ve filled in weekdays, 9am to 5pm, to get you started. Change anything you like, then save.
 		</div>{/if}
-	{#if loading}<p class="page-intro">Loading your saved hours…</p>
-	{:else if !loaded}<div class="notice notice-warning" role="alert">{message}</div>
+	{#if !loaded}<div class="notice notice-warning" role="alert">{message}</div>
 		<button class="button button-secondary" onclick={() => window.location.reload()}>Try loading again</button>
 	{:else}
 		<form

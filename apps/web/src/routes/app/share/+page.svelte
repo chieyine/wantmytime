@@ -1,24 +1,12 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { api } from '$lib/api';
 	import { env } from '$env/dynamic/public';
 	import { recordProductEvent } from '$lib/analytics';
-	let handle = $state('');
-	let appOrigin = $state('');
+	let { data } = $props();
+	// The workspace layout already knows the seller's link.
+	let handle = $derived((data.account as { handle: string }).handle ?? '');
+	const appOrigin = (env.PUBLIC_APP_ORIGIN || window.location.origin).replace(/\/$/, '');
 	let done = $state(false);
 	let message = $state('');
-	let busy = $state(true);
-	onMount(async () => {
-		try {
-			const p = await api<{ handle: string }>('/api/v1/me/link');
-			handle = p.handle;
-			appOrigin = env.PUBLIC_APP_ORIGIN || window.location.origin;
-		} catch (e) {
-			message = e instanceof Error ? e.message : 'Your link could not be loaded.';
-		} finally {
-			busy = false;
-		}
-	});
 	let url = $derived(handle ? `${appOrigin}/${encodeURIComponent(handle)}` : '');
 	async function copy() {
 		try {
@@ -53,11 +41,8 @@
 	<a class="back-link" href="/app">← Overview</a>
 	<p class="eyebrow">Share</p>
 	<h1 class="page-heading">Put it everywhere.</h1>
-	{#if busy}<p class="page-intro">Loading your link…</p>{:else if message && !handle}<div
-			class="notice notice-warning"
-			role="alert"
-		>
-			{message}
+	{#if !handle}<div class="notice notice-warning" role="alert">
+			You haven’t claimed a link yet. <a class="text-link" href="/claim">Claim your link ↗</a>
 		</div>{:else}<div class="share-card">
 			<small>YOUR LINK</small><strong><a href={url}>{url}</a></strong>
 			<p>“Can I pick your brain?”<br />“Happy to. Book a time here.”</p>

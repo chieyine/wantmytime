@@ -1,38 +1,16 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { api } from '$lib/api';
 	import { formatMoney } from '$lib/money';
-	import { payoutStatus, payoutAmount, type Payout } from '$lib/payouts';
+	import { payoutStatus, payoutAmount } from '$lib/payouts';
 
-	let payouts = $state<Payout[]>([]);
-	let upcoming = $state(0);
-	let paid = $state(0);
-	let paused = $state(false);
-	let currency = $state('NGN');
+	let { data } = $props();
+	let payouts = $derived(data.payouts?.payouts ?? []);
+	let upcoming = $derived(data.payouts?.upcoming_minor ?? 0);
+	let paid = $derived(data.payouts?.paid_minor ?? 0);
+	let paused = $derived(data.payouts?.paused ?? false);
+	let currency = $derived(data.payouts?.currency || 'NGN');
 	const formatNaira = (minor: number) => formatMoney(minor, currency);
-	let hasBank = $state<boolean | null>(null);
-	let loaded = $state(false);
-	let message = $state('');
-	onMount(async () => {
-		try {
-			const [p, a] = await Promise.all([
-				api<{ payouts: Payout[]; upcoming_minor: number; paid_minor: number; paused: boolean; currency?: string }>(
-					'/api/v1/me/payouts'
-				),
-				api<{ account: unknown | null }>('/api/v1/me/payout-account')
-			]);
-			payouts = p.payouts;
-			upcoming = p.upcoming_minor;
-			paid = p.paid_minor;
-			paused = p.paused;
-			currency = p.currency || 'NGN';
-			hasBank = a.account !== null;
-		} catch (e) {
-			message = e instanceof Error ? e.message : 'Your money could not be loaded.';
-		} finally {
-			loaded = true;
-		}
-	});
+	let hasBank = $derived(data.hasBank);
+	let message = $derived(data.loadError);
 </script>
 
 <svelte:head><title>Money — WantMyTime</title></svelte:head>
@@ -52,8 +30,7 @@
 				>Add it now ↗</a
 			>
 		</div>{/if}
-	{#if !loaded}<p class="page-intro">Loading…</p>
-	{:else if message}<div class="notice notice-warning" role="alert">{message}</div>
+	{#if message}<div class="notice notice-warning" role="alert">{message}</div>
 	{:else}
 		<div class="money-status-grid">
 			<div>

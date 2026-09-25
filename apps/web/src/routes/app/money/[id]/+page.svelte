@@ -1,35 +1,9 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { api } from '$lib/api';
 	import { formatMoney } from '$lib/money';
-	let { params } = $props();
-	type Item = {
-		id: string;
-		booking_id: string;
-		seller: string;
-		starts_at: string;
-		currency: string;
-		gross_minor: number;
-		deduction_minor: number;
-		seller_entitlement_minor: number;
-		route: string;
-		state: string;
-		provider_reference: string | null;
-		settled_at: string | null;
-	};
-	let item = $state<Item | null>(null);
-	let message = $state('');
-	let loading = $state(true);
+	let { data } = $props();
+	let item = $derived(data.item);
+	let message = $derived(data.loadError);
 	const formatNaira = (minor: number) => formatMoney(minor, item?.currency || 'NGN');
-	onMount(async () => {
-		try {
-			item = await api<Item>(`/api/v1/me/settlements/${encodeURIComponent(params.id)}`);
-		} catch (error) {
-			message = error instanceof Error ? error.message : 'This settlement record is unavailable.';
-		} finally {
-			loading = false;
-		}
-	});
 	const dateLabel = (value: string) =>
 		new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 </script>
@@ -38,8 +12,7 @@
 <section class="form-page app-page workspace-money-detail">
 	<a class="back-link" href="/app/money">← Money</a>
 	<p class="eyebrow">Money / settlement record</p>
-	{#if loading}<p class="page-intro">Loading your private record…</p>
-	{:else if !item}<h1 class="page-heading">RECORD UNAVAILABLE.</h1>
+	{#if !item}<h1 class="page-heading">RECORD UNAVAILABLE.</h1>
 		<p class="page-intro">{message}</p>
 	{:else}<div class="money-detail-hero">
 			<span class="record-status" class:urgent={!item.settled_at}

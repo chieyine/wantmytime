@@ -1,26 +1,15 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
 	import { formatMoney } from '$lib/money';
+	import type { Policy } from './+page';
 
-	type Policy = { key: string; name: string; summary: string };
-	let options = $state<Policy[]>([]);
-	let chosen = $state('');
-	let saved = $state('');
-	let message = $state('');
+	let { data } = $props();
+	let options = $derived(data.options);
+	let chosen = $derived(data.policy);
+	let saved = $derived(data.policy);
+	let message = $derived(data.loadError);
 	let busy = $state(false);
-	let owed = $state<{ outstanding_minor: number; max_share_bps: number; currency?: string } | null>(null);
-
-	onMount(async () => {
-		try {
-			const data = await api<{ policy: string; options: Policy[] }>('/api/v1/me/cancellation-policy');
-			options = data.options;
-			chosen = saved = data.policy;
-			owed = await api('/api/v1/me/refund-recoveries');
-		} catch (e) {
-			message = e instanceof Error ? e.message : 'Your policy could not be loaded.';
-		}
-	});
+	let owed = $derived(data.owed);
 
 	async function save() {
 		busy = true;

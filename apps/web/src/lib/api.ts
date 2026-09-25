@@ -1,10 +1,12 @@
 // Browser traffic stays same-origin so HttpOnly sessions work through the
 // reverse proxy. Server-side loads call the API themselves with
-// `$env/dynamic/private` API_INTERNAL_BASE; this helper is for browser code.
+// `$env/dynamic/private` API_INTERNAL_BASE; this helper is for browser code,
+// including universal load functions in the workspace, which render in the browser.
 const API = import.meta.env.VITE_API_BASE ?? '';
 
-export async function api<T>(path: string, init?: RequestInit): Promise<T> {
-	const response = await fetch(`${API}${path}`, {
+// Load functions pass SvelteKit's fetch, so a page's data can be preloaded on hover.
+export async function api<T>(path: string, init?: RequestInit, fetcher: typeof fetch = fetch): Promise<T> {
+	const response = await fetcher(`${API}${path}`, {
 		...init,
 		headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) }
 	});
