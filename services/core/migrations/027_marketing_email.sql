@@ -1,4 +1,4 @@
--- Announcement email (news from WantMyTime and Kredit, including kredit.ng).
+-- Announcement email (news from WantMyTime and Kredit Technologies).
 -- Kept apart from transactional email: booking and payment emails never
 -- depend on any of this.
 

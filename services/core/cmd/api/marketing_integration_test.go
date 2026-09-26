@@ -54,7 +54,7 @@ func TestAnnouncementEmailsReachOnlyConfirmedSubscribers(t *testing.T) {
 	}
 
 	// Sending needs the operator to confirm the number of people.
-	id := ops.expect(201, "POST", "/api/v1/ops/broadcasts", map[string]any{"subject": "Kredit is here", "heading": "Meet kredit.ng", "body": "First paragraph.\n\nSecond paragraph.", "action_label": "Visit kredit.ng", "action_url": "https://kredit.ng"})["id"].(string)
+	id := ops.expect(201, "POST", "/api/v1/ops/broadcasts", map[string]any{"subject": "Spring news", "heading": "What is new", "body": "First paragraph.\n\nSecond paragraph.", "action_label": "Read more", "action_url": "https://example.com/news"})["id"].(string)
 	ops.expect(409, "POST", "/api/v1/ops/broadcasts/"+id+"/send", map[string]any{"confirm_audience": 5})
 	ops.expect(200, "POST", "/api/v1/ops/broadcasts/"+id+"/send", map[string]any{"confirm_audience": 2})
 	ops.expect(409, "POST", "/api/v1/ops/broadcasts/"+id+"/send", map[string]any{"confirm_audience": 2})
@@ -71,7 +71,7 @@ func TestAnnouncementEmailsReachOnlyConfirmedSubscribers(t *testing.T) {
 	itMail.mu.Lock()
 	var sent []emailMessage
 	for _, m := range itMail.messages[start:] {
-		if m.Subject == "Kredit is here" {
+		if m.Subject == "Spring news" {
 			sent = append(sent, m)
 		}
 	}
@@ -80,7 +80,7 @@ func TestAnnouncementEmailsReachOnlyConfirmedSubscribers(t *testing.T) {
 		t.Fatalf("sent %d announcements", len(sent))
 	}
 	msg := sent[0]
-	if msg.Headers["List-Unsubscribe-Post"] != "List-Unsubscribe=One-Click" || !strings.Contains(msg.Headers["List-Unsubscribe"], "/api/v1/marketing/one-click?token=") || !strings.Contains(msg.Text, "Unsubscribe: ") || !strings.Contains(msg.HTML, "https://kredit.ng") {
+	if msg.Headers["List-Unsubscribe-Post"] != "List-Unsubscribe=One-Click" || !strings.Contains(msg.Headers["List-Unsubscribe"], "/api/v1/marketing/one-click?token=") || !strings.Contains(msg.Text, "Unsubscribe: ") || !strings.Contains(msg.HTML, "https://example.com/news") {
 		t.Fatalf("announcement headers %v\n%s", msg.Headers, msg.Text)
 	}
 	if state := scalar[string](t, `SELECT state FROM broadcasts WHERE id=$1`, id); state != "sent" {

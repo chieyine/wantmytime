@@ -4,6 +4,7 @@ import (
 	"aside/core/internal/observe"
 	_ "image/jpeg"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -197,10 +198,11 @@ func (a *API) cors(next http.Handler) http.Handler {
 			allowed["http://127.0.0.1:5173"] = true
 			allowed["http://localhost:5173"] = true
 		}
-		if configured := os.Getenv("PUBLIC_APP_ORIGIN"); configured != "" {
-			allowed[configured] = true
+		for _, o := range siteOrigins(os.Getenv("PUBLIC_APP_ORIGIN")) {
+			allowed[o] = true
 		}
 		if origin != "" && !allowed[origin] {
+			a.log().WarnContext(r.Context(), "request origin rejected", "origin", origin, "path", r.URL.Path)
 			problem(w, 403, "ORIGIN_DENIED", "Request origin is not allowed.")
 			return
 		}
@@ -242,4 +244,24 @@ func secureHeaders(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// siteOrigins is the configured public origin and its www twin (or the bare
+// domain when www is configured), so a domain host that redirects between the
+// two never breaks sign-in. A trailing slash is ignored.
+func siteOrigins(configured string) []string {
+	u, err := url.Parse(strings.TrimRight(strings.TrimSpace(configured), "/"))
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return nil
+	}
+	base := u.Scheme + "://" + strings.ToLower(u.Host)
+	twin := strings.ToLower(u.Host)
+	if strings.HasPrefix(twin, "www.") {
+		twin = strings.TrimPrefix(twin, "www.")
+	} else if strings.Count(twin, ".") == 1 {
+		twin = "www." + twin
+	} else {
+		return []string{base}
+	}
+	return []string{base, u.Scheme + "://" + twin}
 }

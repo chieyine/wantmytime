@@ -15,7 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// Announcement email: news from WantMyTime and Kredit (including kredit.ng),
+// Announcement email: news from WantMyTime and Kredit Technologies,
 // sent only to people who said yes. Transactional email never depends on it.
 
 // marketingWording is the exact sentence people agree to. It is stored with
@@ -317,11 +317,12 @@ type broadcastInput struct {
 	Body        string `json:"body"`
 	ActionLabel string `json:"action_label"`
 	ActionURL   string `json:"action_url"`
+	ImageURL    string `json:"image_url"`
 }
 
 func (in *broadcastInput) validate() string {
 	in.Subject, in.Heading, in.Body = strings.TrimSpace(in.Subject), strings.TrimSpace(in.Heading), strings.TrimSpace(in.Body)
-	in.ActionLabel, in.ActionURL = strings.TrimSpace(in.ActionLabel), strings.TrimSpace(in.ActionURL)
+	in.ActionLabel, in.ActionURL, in.ImageURL = strings.TrimSpace(in.ActionLabel), strings.TrimSpace(in.ActionURL), strings.TrimSpace(in.ImageURL)
 	if in.Subject == "" || len(in.Subject) > 150 || strings.ContainsAny(in.Subject, "\r\n") {
 		return "Write a one-line subject of up to 150 characters."
 	}
@@ -337,6 +338,11 @@ func (in *broadcastInput) validate() string {
 	if in.ActionURL != "" {
 		if u, err := url.Parse(in.ActionURL); err != nil || u.Scheme != "https" || u.Host == "" {
 			return "The button link must be a full https:// address."
+		}
+	}
+	if in.ImageURL != "" {
+		if u, err := url.Parse(in.ImageURL); err != nil || u.Scheme != "https" || u.Host == "" || len(in.ImageURL) > 2000 {
+			return "The image must be a full https:// address."
 		}
 	}
 	return ""
@@ -357,7 +363,7 @@ func (a *API) opsCreateBroadcast(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var id string
-	if err := a.db.QueryRow(r.Context(), `INSERT INTO broadcasts(subject,heading,body,action_label,action_url,created_by) VALUES($1,$2,$3,NULLIF($4,''),NULLIF($5,''),$6) RETURNING id::text`, in.Subject, in.Heading, in.Body, in.ActionLabel, in.ActionURL, actor.ID).Scan(&id); err != nil {
+	if err := a.db.QueryRow(r.Context(), `INSERT INTO broadcasts(subject,heading,body,action_label,action_url,image_url,created_by) VALUES($1,$2,$3,NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),$7) RETURNING id::text`, in.Subject, in.Heading, in.Body, in.ActionLabel, in.ActionURL, in.ImageURL, actor.ID).Scan(&id); err != nil {
 		problem(w, 503, "DATABASE_ERROR", "The announcement could not be saved.")
 		return
 	}
@@ -366,16 +372,16 @@ func (a *API) opsCreateBroadcast(w http.ResponseWriter, r *http.Request) {
 
 type broadcast struct {
 	id, subject, heading, body, state string
-	actionLabel, actionURL            *string
+	actionLabel, actionURL, imageURL  *string
 }
 
 func (a *API) loadBroadcast(ctx context.Context, db dbExecQuerier, id string, lock bool) (broadcast, error) {
 	var b broadcast
-	q := `SELECT id::text,subject,heading,body,action_label,action_url,state FROM broadcasts WHERE id=$1`
+	q := `SELECT id::text,subject,heading,body,action_label,action_url,image_url,state FROM broadcasts WHERE id=$1`
 	if lock {
 		q += ` FOR UPDATE`
 	}
-	err := db.QueryRow(ctx, q, id).Scan(&b.id, &b.subject, &b.heading, &b.body, &b.actionLabel, &b.actionURL, &b.state)
+	err := db.QueryRow(ctx, q, id).Scan(&b.id, &b.subject, &b.heading, &b.body, &b.actionLabel, &b.actionURL, &b.imageURL, &b.state)
 	return b, err
 }
 
@@ -398,6 +404,9 @@ func broadcastMessage(b broadcast, to, token string) emailMessage {
 	}
 	if b.actionLabel != nil && b.actionURL != nil {
 		content.Action = &emailLink{Label: *b.actionLabel, URL: *b.actionURL}
+	}
+	if b.imageURL != nil {
+		content.Image = &emailImage{URL: *b.imageURL, Alt: b.heading}
 	}
 	msg := content.message(to, "broadcast:"+b.id+":"+to)
 	msg.From = os.Getenv("EMAIL_MARKETING_FROM")

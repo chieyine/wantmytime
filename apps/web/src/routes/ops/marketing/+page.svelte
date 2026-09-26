@@ -21,7 +21,7 @@
 	let summary = $state<Summary | null>(null);
 	let message = $state('');
 	let busy = $state(false);
-	let draft = $state({ subject: '', heading: '', body: '', action_label: '', action_url: '' });
+	let draft = $state({ subject: '', heading: '', body: '', action_label: '', action_url: '', image_url: '' });
 	let unsubscribes = $state('');
 
 	async function load() {
@@ -49,7 +49,7 @@
 	const create = () =>
 		run(async () => {
 			await api('/api/v1/ops/broadcasts', { method: 'POST', body: JSON.stringify(draft) });
-			draft = { subject: '', heading: '', body: '', action_label: '', action_url: '' };
+			draft = { subject: '', heading: '', body: '', action_label: '', action_url: '', image_url: '' };
 			return 'Saved as a draft. Send yourself a test before sending it to everyone.';
 		});
 	const test = (b: Broadcast) =>
@@ -148,6 +148,16 @@
 			}}
 		>
 			<label>Subject<input class="field" bind:value={draft.subject} maxlength="150" required /></label>
+			<label
+				>Image · optional<input
+					class="field"
+					type="url"
+					bind:value={draft.image_url}
+					placeholder="https://…/banner.png"
+				/><span class="form-note"
+					>A wide picture across the top, 1200 pixels wide works well. Use a full https:// address.</span
+				></label
+			>
 			<label>Heading<input class="field" bind:value={draft.heading} maxlength="150" required /></label>
 			<label
 				>Message<textarea class="field" rows="8" bind:value={draft.body} maxlength="20000" required></textarea><span
@@ -160,7 +170,7 @@
 					class="field"
 					type="url"
 					bind:value={draft.action_url}
-					placeholder="https://kredit.ng"
+					placeholder="https://…"
 				/></label
 			>
 			<button class="button" type="submit" disabled={busy}>Save draft</button>

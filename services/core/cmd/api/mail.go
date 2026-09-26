@@ -59,9 +59,27 @@ type emailContent struct {
 	Action     *emailLink
 	Notes      []string
 	Calendar   *calendarEvent
-	// Footer replaces the transactional footer; Unsubscribe adds a link to it.
+	// Code is a one-time code, shown large and easy to copy.
+	Code string
+	// Links are secondary links under the main button ("Download your receipt").
+	Links []emailLink
+	// Image is an optional picture across the top of the card (announcements).
+	Image *emailImage
+	// Footer replaces the line saying why the email was sent; Unsubscribe adds a link.
 	Footer      string
 	Unsubscribe *emailLink
+}
+
+type emailImage struct{ URL, Alt string }
+
+// companyLine identifies the sender in every email, as the privacy notice does.
+const companyLine = "WantMyTime · Kredit Technologies Limited · House No. 348, Jamaina Road, Pompomari Bypass, Maiduguri, Borno State, Nigeria"
+
+func emailReplyTo() string {
+	if replyTo := strings.TrimSpace(os.Getenv("EMAIL_REPLY_TO")); replyTo != "" && validEmail(replyTo) {
+		return replyTo
+	}
+	return ""
 }
 
 func (c emailContent) message(to, idempotencyKey string) emailMessage {
@@ -77,19 +95,31 @@ func (c emailContent) message(to, idempotencyKey string) emailMessage {
 	return msg
 }
 
-// emailFooter says whether replies reach a person (EMAIL_REPLY_TO set).
+// emailFooter says why the email was sent and where to get help.
 func emailFooter() string {
-	if replyTo := strings.TrimSpace(os.Getenv("EMAIL_REPLY_TO")); replyTo != "" && validEmail(replyTo) {
-		return "This is an automatic message about your booking on WantMyTime. Need help? Reply to this email."
+	return "You’re getting this because of your account or a booking on WantMyTime."
+}
+
+func emailHelpText() string {
+	if emailReplyTo() != "" {
+		return "Questions? Just reply to this email."
 	}
-	return "This is an automatic message about your booking on WantMyTime. Replies are not monitored."
+	return "Questions? See " + appOrigin() + "/help"
 }
 
 func renderEmail(c emailContent) (string, string) {
+	footer := emailFooter()
+	if c.Footer != "" {
+		footer = c.Footer
+	}
+
 	var t strings.Builder
 	t.WriteString(c.Heading + "\n\n")
 	for _, p := range c.Paragraphs {
 		t.WriteString(p + "\n\n")
+	}
+	if c.Code != "" {
+		t.WriteString("Your code is " + c.Code + "\n\n")
 	}
 	if len(c.Facts) > 0 {
 		for _, f := range c.Facts {
@@ -100,52 +130,80 @@ func renderEmail(c emailContent) (string, string) {
 	if c.Action != nil {
 		t.WriteString(c.Action.Label + ": " + c.Action.URL + "\n\n")
 	}
+	for _, l := range c.Links {
+		t.WriteString(l.Label + ": " + l.URL + "\n")
+	}
+	if len(c.Links) > 0 {
+		t.WriteString("\n")
+	}
 	for _, n := range c.Notes {
 		t.WriteString(n + "\n\n")
 	}
-	footer := emailFooter()
-	if c.Footer != "" {
-		footer = c.Footer
-	}
-	t.WriteString("WantMyTime\n" + footer + "\n")
+	t.WriteString("--\n" + emailHelpText() + "\n" + footer + "\n")
 	if c.Unsubscribe != nil {
 		t.WriteString(c.Unsubscribe.Label + ": " + c.Unsubscribe.URL + "\n")
 	}
+	t.WriteString(companyLine + "\n")
 
 	e := html.EscapeString
+	const ink, muted, rule, paper = "#171817", "#5b5f58", "#d8d4c8", "#f1efe8"
+	font := "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
 	var h strings.Builder
-	h.WriteString(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>`)
+	h.WriteString(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><title>`)
 	h.WriteString(e(c.Subject))
-	h.WriteString(`</title></head><body style="margin:0;padding:0;background:#f1efe8;color:#171817;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">`)
+	h.WriteString(`</title></head><body style="margin:0;padding:0;background:` + paper + `;color:` + ink + `;font-family:` + font + `;-webkit-text-size-adjust:100%;">`)
 	if c.Preheader != "" {
-		h.WriteString(`<div style="display:none;max-height:0;overflow:hidden;opacity:0;">` + e(c.Preheader) + `</div>`)
+		// Hidden preview text, padded so the inbox preview doesn't pull in body text.
+		h.WriteString(`<div style="display:none;max-height:0;overflow:hidden;opacity:0;">` + e(c.Preheader) + strings.Repeat("&#8199;&#65279;&#847; ", 30) + `</div>`)
 	}
-	h.WriteString(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1efe8;"><tr><td align="center" style="padding:32px 16px;">`)
+	h.WriteString(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:` + paper + `;"><tr><td align="center" style="padding:28px 12px 36px;">`)
 	h.WriteString(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">`)
-	h.WriteString(`<tr><td style="padding:0 4px 16px;font-size:13px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;">WantMyTime</td></tr>`)
-	h.WriteString(`<tr><td style="background:#ffffff;border:1px solid #171817;padding:32px 28px;">`)
-	h.WriteString(`<h1 style="margin:0 0 16px;font-size:24px;line-height:1.25;font-weight:700;letter-spacing:-.02em;">` + e(c.Heading) + `</h1>`)
+	// The wordmark, as on the site: WantMyTime with a red full stop.
+	h.WriteString(`<tr><td style="padding:0 4px 18px;"><a href="` + e(appOrigin()) + `" style="color:` + ink + `;text-decoration:none;font-size:22px;font-weight:800;letter-spacing:-.03em;">WantMyTime<span style="color:#b43a30;">.</span></a></td></tr>`)
+	h.WriteString(`<tr><td style="background:#ffffff;border:1px solid ` + ink + `;">`)
+	if c.Image != nil {
+		h.WriteString(`<img src="` + e(c.Image.URL) + `" alt="` + e(c.Image.Alt) + `" width="558" style="display:block;width:100%;max-width:558px;height:auto;border:0;border-bottom:1px solid ` + ink + `;">`)
+	}
+	h.WriteString(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="padding:32px 28px 28px;">`)
+	h.WriteString(`<h1 style="margin:0 0 16px;font-size:26px;line-height:1.2;font-weight:800;letter-spacing:-.025em;color:` + ink + `;">` + e(c.Heading) + `</h1>`)
 	for _, p := range c.Paragraphs {
-		h.WriteString(`<p style="margin:0 0 14px;font-size:16px;line-height:1.55;">` + e(p) + `</p>`)
+		h.WriteString(`<p style="margin:0 0 14px;font-size:16px;line-height:1.6;color:` + ink + `;">` + e(p) + `</p>`)
+	}
+	if c.Code != "" {
+		h.WriteString(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:10px 0 22px;"><tr><td align="center" style="background:` + paper + `;border:1px solid ` + rule + `;padding:20px 12px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:34px;line-height:1;font-weight:700;letter-spacing:8px;color:` + ink + `;">` + e(c.Code) + `</td></tr></table>`)
 	}
 	if len(c.Facts) > 0 {
-		h.WriteString(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:8px 0 20px;border-top:1px solid #d8d4c8;">`)
+		h.WriteString(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:8px 0 24px;border-top:1px solid ` + rule + `;">`)
 		for _, f := range c.Facts {
-			h.WriteString(`<tr><td style="padding:10px 12px 10px 0;border-bottom:1px solid #d8d4c8;font-size:13px;color:#5b5f58;white-space:nowrap;vertical-align:top;">` + e(f.Label) + `</td><td style="padding:10px 0;border-bottom:1px solid #d8d4c8;font-size:15px;font-weight:600;vertical-align:top;">` + e(f.Value) + `</td></tr>`)
+			h.WriteString(`<tr><td style="padding:11px 14px 11px 0;border-bottom:1px solid ` + rule + `;font-size:13px;color:` + muted + `;white-space:nowrap;vertical-align:top;width:1%;">` + e(f.Label) + `</td><td style="padding:11px 0;border-bottom:1px solid ` + rule + `;font-size:15px;font-weight:600;line-height:1.45;vertical-align:top;color:` + ink + `;">` + e(f.Value) + `</td></tr>`)
 		}
 		h.WriteString(`</table>`)
 	}
 	if c.Action != nil {
-		h.WriteString(`<table role="presentation" cellpadding="0" cellspacing="0" style="margin:4px 0 20px;"><tr><td style="background:#171817;"><a href="` + e(c.Action.URL) + `" style="display:inline-block;padding:13px 22px;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;">` + e(c.Action.Label) + ` &rarr;</a></td></tr></table>`)
+		h.WriteString(`<table role="presentation" cellpadding="0" cellspacing="0" style="margin:4px 0 22px;"><tr><td style="background:` + ink + `;"><a href="` + e(c.Action.URL) + `" style="display:inline-block;padding:14px 24px;color:#ffffff;text-decoration:none;font-size:15px;font-weight:700;">` + e(c.Action.Label) + ` &rarr;</a></td></tr></table>`)
 	}
-	for _, n := range c.Notes {
-		h.WriteString(`<p style="margin:0 0 12px;font-size:14px;line-height:1.55;color:#3d403b;">` + e(n) + `</p>`)
+	for _, l := range c.Links {
+		h.WriteString(`<p style="margin:0 0 12px;font-size:15px;line-height:1.5;"><a href="` + e(l.URL) + `" style="color:` + ink + `;font-weight:600;text-decoration:underline;">` + e(l.Label) + `</a></p>`)
 	}
-	h.WriteString(`</td></tr><tr><td style="padding:16px 4px;font-size:12px;line-height:1.5;color:#5b5f58;">` + e(footer))
+	for i, n := range c.Notes {
+		top := "0"
+		if i == 0 && (len(c.Links) > 0 || c.Action != nil) {
+			top = "18px"
+		}
+		h.WriteString(`<p style="margin:` + top + ` 0 12px;font-size:14px;line-height:1.6;color:#3d403b;">` + e(n) + `</p>`)
+	}
+	h.WriteString(`</td></tr></table></td></tr>`)
+	h.WriteString(`<tr><td style="padding:18px 4px 0;font-size:12px;line-height:1.6;color:` + muted + `;">`)
+	if emailReplyTo() != "" {
+		h.WriteString(`<p style="margin:0 0 6px;">Questions? Just reply to this email.</p>`)
+	} else {
+		h.WriteString(`<p style="margin:0 0 6px;">Questions? <a href="` + e(appOrigin()+"/help") + `" style="color:` + muted + `;">See our help page</a>.</p>`)
+	}
+	h.WriteString(`<p style="margin:0 0 6px;">` + e(footer))
 	if c.Unsubscribe != nil {
-		h.WriteString(` <a href="` + e(c.Unsubscribe.URL) + `" style="color:#5b5f58;">` + e(c.Unsubscribe.Label) + `</a>`)
+		h.WriteString(` <a href="` + e(c.Unsubscribe.URL) + `" style="color:` + muted + `;">` + e(c.Unsubscribe.Label) + `</a>`)
 	}
-	h.WriteString(`</td></tr>`)
+	h.WriteString(`</p><p style="margin:0;">` + e(companyLine) + `</p></td></tr>`)
 	h.WriteString(`</table></td></tr></table></body></html>`)
 	return t.String(), h.String()
 }

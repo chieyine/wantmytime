@@ -251,3 +251,35 @@ func TestProductionConfigChecks(t *testing.T) {
 		}
 	}
 }
+
+func TestSiteOriginsIncludeTheWwwTwin(t *testing.T) {
+	cases := map[string][]string{
+		"https://wantmytime.com":     {"https://wantmytime.com", "https://www.wantmytime.com"},
+		"https://wantmytime.com/":    {"https://wantmytime.com", "https://www.wantmytime.com"},
+		"https://www.wantmytime.com": {"https://www.wantmytime.com", "https://wantmytime.com"},
+		"https://app.wantmytime.com": {"https://app.wantmytime.com"},
+		"http://127.0.0.1:5173":      {"http://127.0.0.1:5173"},
+		"":                           nil,
+	}
+	for in, want := range cases {
+		got := siteOrigins(in)
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Errorf("siteOrigins(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
+
+func TestSignInAcceptsTheWwwSite(t *testing.T) {
+	t.Setenv("PUBLIC_APP_ORIGIN", "https://wantmytime.com")
+	a := &API{env: "production"}
+	handler := a.cors(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }))
+	for origin, want := range map[string]int{"https://www.wantmytime.com": 204, "https://wantmytime.com": 204, "https://evil.example": 403} {
+		req := httptest.NewRequest("POST", "/api/v1/auth/challenges", nil)
+		req.Header.Set("Origin", origin)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != want {
+			t.Errorf("origin %s: %d, want %d", origin, rec.Code, want)
+		}
+	}
+}

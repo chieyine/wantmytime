@@ -35,7 +35,8 @@ The product code is complete for buyers and sellers in every flow (see [FLOW_WAL
 
 - [ ] Choose the host; production PostgreSQL (with point-in-time recovery), Redis, and two Cloudflare R2 buckets (photos, backups).
 - [ ] Generate every secret and key (`openssl rand -base64 32` / `48`) into the secret manager; the API refuses to start in production with weak, reused or missing ones.
-- [ ] `aside-api migrate` (migrations 001 to 027), then deploy the API, web app and gateway with TLS on `wantmytime.com`.
+- [ ] In Vercel → Domains, make `wantmytime.com` the primary domain and redirect `www.wantmytime.com` to it (today it is the other way round). Canonical links, the sitemap, Kora's return address and Google's callback all use `wantmytime.com`; sign-in works either way since the API also accepts the `www` twin.
+- [ ] `aside-api migrate` (migrations 001 to 028), then deploy the API, web app and gateway with TLS on `wantmytime.com`.
 - [ ] Backups running and one restore drill done (OPERATIONS.md).
 - [ ] CI green on the pull request (`.github/workflows/ci.yml`: lint, type check, build, Go unit and integration tests, end-to-end tests). To run it locally, see the README.
 

@@ -261,7 +261,7 @@ func (a *API) bookingEmail(ctx context.Context, jobID string) (emailContent, str
 					paid += " (includes " + formatMoney(n.Currency, fee) + " payment fee)"
 				}
 				c.Facts = append(c.Facts, emailFact{"Paid", paid})
-				c.Notes = append(c.Notes, "Receipt: "+bookingURL+"/receipt")
+				c.Links = append(c.Links, emailLink{"Download your receipt", bookingURL + "/receipt"})
 			}
 			c.Facts = append(c.Facts, emailFact{"Cancellation", policyOrDefault(n.CancellationPolicy).Summary})
 			if !simulated {
@@ -297,7 +297,8 @@ func (a *API) bookingEmail(ctx context.Context, jobID string) (emailContent, str
 		c.Paragraphs = []string{n.SellerName + " added the link for your call. Use it at the scheduled time."}
 		c.Facts = append(baseFacts, emailFact{"Meeting link", string(meeting)})
 		c.Action = &emailLink{"Join the call", string(meeting)}
-		c.Notes = []string{"Keep this link to yourself. Your booking page always has the latest details: " + bookingURL}
+		c.Links = []emailLink{{"Open your booking page", bookingURL}}
+		c.Notes = []string{"Keep this link to yourself. Your booking page always has the latest details."}
 	case "booking_reminder_24h_buyer", "booking_reminder_1h_buyer", "booking_reminder_24h_seller", "booking_reminder_1h_seller":
 		if !upcoming {
 			return c, "", "STALE"

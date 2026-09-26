@@ -156,7 +156,16 @@ func randomDigits(n int) (string, error) {
 }
 
 func (a *API) sendCode(email, code string) bool {
-	if a.sendEmail(email, "Your WantMyTime sign-in code", "Your WantMyTime verification code is "+code+". It expires in 10 minutes.") {
+	content := emailContent{
+		Subject:    "Your WantMyTime sign-in code",
+		Preheader:  "Your code is " + code + ". It works for 10 minutes.",
+		Heading:    "Your sign-in code",
+		Paragraphs: []string{"Enter this code on WantMyTime to continue. It works for 10 minutes."},
+		Code:       code,
+		Notes:      []string{"Didn’t ask for a code? You can ignore this email. Nobody can sign in without it."},
+		Footer:     "You’re getting this because someone entered this address on WantMyTime.",
+	}
+	if a.deliverEmail(context.Background(), content.message(email, "")) {
 		return true
 	}
 	if a.env != "production" && os.Getenv("ALLOW_LOG_OTP") == "true" {

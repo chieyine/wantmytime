@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
 	let email = $state('');
 	let message = $state('');
@@ -12,15 +11,6 @@
 				const target = new URL(candidate, window.location.origin);
 				if (target.origin === window.location.origin) next = target.pathname + target.search + target.hash;
 			}
-		}
-	});
-	// Already signed in? Go straight on instead of asking for a code again.
-	onMount(async () => {
-		try {
-			await api('/api/v1/me');
-			window.location.replace(next);
-		} catch {
-			/* not signed in */
 		}
 	});
 	async function submit() {
