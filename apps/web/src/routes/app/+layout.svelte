@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { page } from '$app/state';
+	import { page, navigating } from '$app/state';
 	import { api } from '$lib/api';
 
 	let { data, children } = $props();
@@ -13,9 +13,10 @@
 		{ href: '/app/availability', label: 'Hours', number: '04', also: [] },
 		{ href: '/app/money', label: 'Money', number: '05', also: [] }
 	];
-	const under = (href: string) => page.url.pathname === href || page.url.pathname.startsWith(`${href}/`);
+	let activePath = $derived(navigating.to?.url.pathname ?? page.url.pathname);
+	const under = (href: string) => activePath === href || activePath.startsWith(`${href}/`);
 	function current(item: { href: string; also: string[] }) {
-		return item.href === '/app' ? page.url.pathname === '/app' : [item.href, ...item.also].some(under);
+		return item.href === '/app' ? activePath === '/app' : [item.href, ...item.also].some(under);
 	}
 	let inSettings = $derived(under('/app/settings'));
 	async function signOut() {
@@ -34,9 +35,13 @@
 		<div class="workspace-rail-head">
 			<a class="workspace-brand" href="/">WantMyTime<span>.</span></a><span>YOUR SPACE</span>
 		</div>
-		<nav aria-label="Workspace">
+		<nav aria-label="Workspace" data-sveltekit-preload-data="hover">
 			{#each navigation as item (item.href)}
-				<a href={item.href} class:active={current(item)} aria-current={current(item) ? 'page' : undefined}
+				<a
+					href={item.href}
+					class:active={current(item)}
+					aria-current={current(item) ? 'page' : undefined}
+					data-sveltekit-preload-data="tap"
 					><small>{item.number}</small><span>{item.label}</span><span aria-hidden="true">↗</span></a
 				>
 			{/each}
@@ -45,7 +50,8 @@
 			<span>ACCOUNT</span><strong>{account.name}</strong><small>{account.email}</small><a
 				href="/app/settings"
 				class:active={inSettings}
-				aria-current={inSettings ? 'page' : undefined}>SETTINGS <span aria-hidden="true">↗</span></a
+				aria-current={inSettings ? 'page' : undefined}
+				data-sveltekit-preload-data="tap">SETTINGS <span aria-hidden="true">↗</span></a
 			><button type="button" onclick={signOut}>SIGN OUT <span aria-hidden="true">↗</span></button>{#if signOutError}<p
 					role="alert"
 				>
@@ -62,16 +68,18 @@
 					class:active={inSettings}
 					href="/app/settings"
 					aria-label="Settings"
-					title="Settings">{account.name?.slice(0, 1).toUpperCase() || 'A'}</a
+					title="Settings"
+					data-sveltekit-preload-data="tap">{account.name?.slice(0, 1).toUpperCase() || 'A'}</a
 				>
 			</div>
 		</header>
 		{#if signOutError}<p class="workspace-signout-error" role="alert">{signOutError}</p>{/if}
-		<nav class="workspace-mobile-nav" aria-label="Workspace sections">
+		<nav class="workspace-mobile-nav" aria-label="Workspace sections" data-sveltekit-preload-data="tap">
 			{#each navigation as item (item.href)}<a
 					href={item.href}
 					class:active={current(item)}
-					aria-current={current(item) ? 'page' : undefined}>{item.label}</a
+					aria-current={current(item) ? 'page' : undefined}
+					data-sveltekit-preload-data="tap">{item.label}</a
 				>{/each}
 		</nav>
 		<div class="workspace-body" id="workspace-content" tabindex="-1">{@render children()}</div>

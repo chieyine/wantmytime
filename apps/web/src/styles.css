@@ -5990,3 +5990,25 @@ h3 {
 	flex-wrap: wrap;
 	gap: 10px;
 }
+
+.nav-loading-bar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	height: 3px;
+	z-index: 999999;
+	background: linear-gradient(90deg, #171817 0%, #e53e3e 50%, #dfff80 100%);
+	background-size: 200% 100%;
+	animation: nav-loading-slide 0.8s ease-in-out infinite;
+	pointer-events: none;
+}
+
+@keyframes nav-loading-slide {
+	0% {
+		background-position: 100% 0;
+	}
+	100% {
+		background-position: -100% 0;
+	}
+}
