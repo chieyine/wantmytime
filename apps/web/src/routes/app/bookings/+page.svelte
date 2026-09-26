@@ -123,48 +123,46 @@
 	</div>
 	{#if loading && !bookings.length}<p class="page-intro">Loading your bookings…</p>
 	{:else if message && !bookings.length}<div class="notice notice-warning" role="alert">{message}</div>
-	{:else if bookings.length === 0}<div class="empty-state">
-			<span class="empty-line"></span>
-			<h2>YOUR FIRST BOOKING WILL APPEAR HERE.</h2>
-			<p>When someone books your link, you will see the time and private details here.</p>
-			<a href="/app" class="text-link">SHARE YOUR LINK ↗</a>
+	{:else if filtered.length}
+		<div class="record-list" aria-live="polite">
+			{#each filtered as booking (booking.id)}<a
+					class="record-row"
+					href={`/app/bookings/${encodeURIComponent(booking.id)}`}
+					><div class="record-row-date">
+						<strong
+							>{new Intl.DateTimeFormat(undefined, { day: '2-digit' }).format(new Date(booking.starts_at))}</strong
+						><span
+							>{new Intl.DateTimeFormat(undefined, { month: 'short' })
+								.format(new Date(booking.starts_at))
+								.toUpperCase()}</span
+						>
+					</div>
+					<div class="record-row-main">
+						<span class="record-status" class:urgent={needsAttention(booking)}>{status(booking)}</span>
+						<h2>{booking.seller === ownHandle ? booking.buyer : booking.seller}</h2>
+						<p>{dateLabel(booking.starts_at)} · {booking.duration_minutes} min</p>
+					</div>
+					<div class="record-row-end">
+						<strong>{formatMoney(booking.amount_minor, booking.currency)}</strong><span
+							>{needsAttention(booking) ? 'OPEN BOOKING' : 'VIEW DETAILS'} ↗</span
+						>
+					</div></a
+				>{/each}
 		</div>
-	{:else}
-		{#if filtered.length}<div class="record-list" aria-live="polite">
-				{#each filtered as booking (booking.id)}<a
-						class="record-row"
-						href={`/app/bookings/${encodeURIComponent(booking.id)}`}
-						><div class="record-row-date">
-							<strong
-								>{new Intl.DateTimeFormat(undefined, { day: '2-digit' }).format(new Date(booking.starts_at))}</strong
-							><span
-								>{new Intl.DateTimeFormat(undefined, { month: 'short' })
-									.format(new Date(booking.starts_at))
-									.toUpperCase()}</span
-							>
-						</div>
-						<div class="record-row-main">
-							<span class="record-status" class:urgent={needsAttention(booking)}>{status(booking)}</span>
-							<h2>{booking.seller === ownHandle ? booking.buyer : booking.seller}</h2>
-							<p>{dateLabel(booking.starts_at)} · {booking.duration_minutes} min</p>
-						</div>
-						<div class="record-row-end">
-							<strong>{formatMoney(booking.amount_minor, booking.currency)}</strong><span
-								>{needsAttention(booking) ? 'OPEN BOOKING' : 'VIEW DETAILS'} ↗</span
-							>
-						</div></a
-					>{/each}
-			</div>
-		{:else}<div class="record-filter-empty">
-				<h2>{filter === 'upcoming' ? 'NOTHING COMING UP.' : 'NO PAST BOOKINGS YET.'}</h2>
-				<p>
-					{filter === 'upcoming'
-						? 'New bookings appear here as soon as they’re paid.'
-						: 'Finished and cancelled bookings appear here.'}
-				</p>
-			</div>{/if}
 		{#if message}<p class="notice notice-warning" role="alert">{message}</p>{/if}
 		<CursorPager cursor={nextCursor} busy={loading} onNext={() => load(nextCursor)} />
+	{:else}
+		<div class="empty-state">
+			<span class="empty-line"></span>
+			{#if filter === 'upcoming'}
+				<h2>NO UPCOMING BOOKINGS YET.</h2>
+				<p>When someone books your link, their confirmed date, call time, and meeting details will appear right here.</p>
+				<a href="/app" class="text-link">SHARE YOUR LINK ↗</a>
+			{:else}
+				<h2>NO PAST BOOKINGS YET.</h2>
+				<p>Completed, cancelled, and finished bookings will be archived here once your calls have taken place.</p>
+			{/if}
+		</div>
 	{/if}
 	{#if filter === 'past' && pastRequests.length}<section class="records-requests" aria-labelledby="past-requests-title">
 			<h2 id="past-requests-title" class="records-section-title">Past requests</h2>

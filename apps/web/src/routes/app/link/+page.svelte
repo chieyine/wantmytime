@@ -202,15 +202,24 @@
 		avatarBusy = true;
 		try {
 			avatarMessage = 'Optimizing image…';
-			const optimized = await optimizeImageForAvatar(file, 512);
+			const optimized = await optimizeImageForAvatar(file, 320);
 			const data = new FormData();
 			data.append('avatar', optimized);
 			avatarMessage = 'Uploading…';
 			const response = await fetch('/api/v1/me/avatar', { method: 'PUT', body: data });
-			const body = await response.json();
-			if (!response.ok) throw new Error(body?.error?.message || 'The image could not be saved.');
-			avatarPreview = `${body.url}?v=${body.avatar_version}`;
-			avatarMessage = 'Profile image saved.';
+			let body: Record<string, any> | null = null;
+			try {
+				body = await response.json();
+			} catch {
+				// not JSON
+			}
+			if (!response.ok) {
+				throw new Error(body?.error?.message || body?.message || 'The image could not be saved.');
+			}
+			if (body) {
+				avatarPreview = `${body.url}?v=${body.avatar_version}`;
+				avatarMessage = 'Profile image saved.';
+			}
 		} catch (e) {
 			avatarMessage = e instanceof Error ? e.message : 'The image could not be saved.';
 		} finally {
