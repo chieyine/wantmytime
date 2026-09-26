@@ -1893,6 +1893,64 @@ button:disabled {
 	border-radius: 50%;
 	border: 1px solid var(--line);
 }
+.avatar-field-group {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+.avatar-field-group label {
+	font-weight: 700;
+	font-size: 14px;
+	color: var(--ink);
+}
+.avatar-current-row {
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	margin: 4px 0 6px;
+}
+.avatar-current-actions {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+input[type="file"].field,
+.avatar-field {
+	display: flex;
+	align-items: center;
+	min-height: 51px;
+	padding: 0 14px;
+	box-sizing: border-box;
+	cursor: pointer;
+	line-height: 51px;
+}
+input[type="file"].field::-webkit-file-upload-button,
+input[type="file"].field::file-selector-button,
+.avatar-field::-webkit-file-upload-button,
+.avatar-field::file-selector-button {
+	margin-right: 14px;
+	margin-top: auto;
+	margin-bottom: auto;
+	border: 1px solid var(--line);
+	background: var(--surface-muted);
+	color: var(--ink);
+	border-radius: 8px;
+	padding: 7px 14px;
+	font-size: 13px;
+	font-weight: 500;
+	cursor: pointer;
+	align-self: center;
+	vertical-align: middle;
+	line-height: normal;
+	transition: background 0.15s ease, border-color 0.15s ease;
+}
+input[type="file"].field:hover::-webkit-file-upload-button,
+input[type="file"].field:hover::file-selector-button,
+.avatar-field:hover::-webkit-file-upload-button,
+.avatar-field:hover::file-selector-button {
+	background: var(--surface);
+	border-color: var(--line-strong);
+}
 @media (max-width: 600px) {
 	.share-actions {
 		display: grid;

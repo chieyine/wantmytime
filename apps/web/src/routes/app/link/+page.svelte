@@ -7,6 +7,7 @@
 	import { handlePattern, linkLabel, validHandle } from '$lib/handle';
 	import { fetchHandleSuggestions } from '$lib/handle-suggestions';
 	import HandleSuggestions from '$lib/components/HandleSuggestions.svelte';
+	import { optimizeImageForAvatar } from '$lib/image';
 	let { data } = $props();
 	// The form starts from the saved profile the route loaded, then belongs to the page while the seller edits.
 	const saved = untrack(() => data.profile);
@@ -190,18 +191,21 @@
 		const file = avatarInput?.files?.[0];
 		if (!file) return;
 		avatarMessage = '';
-		if (!['image/png', 'image/jpeg'].includes(file.type)) {
-			avatarMessage = 'Choose a PNG or JPEG image.';
+		if (!file.type.startsWith('image/')) {
+			avatarMessage = 'Choose a PNG, JPEG, or WebP image.';
 			return;
 		}
-		if (file.size > 2 * 1024 * 1024) {
-			avatarMessage = 'Choose an image smaller than 2 MB.';
+		if (file.size > 15 * 1024 * 1024) {
+			avatarMessage = 'Choose an image smaller than 15 MB.';
 			return;
 		}
 		avatarBusy = true;
 		try {
+			avatarMessage = 'Optimizing image…';
+			const optimized = await optimizeImageForAvatar(file, 512);
 			const data = new FormData();
-			data.append('avatar', file);
+			data.append('avatar', optimized);
+			avatarMessage = 'Uploading…';
 			const response = await fetch('/api/v1/me/avatar', { method: 'PUT', body: data });
 			const body = await response.json();
 			if (!response.ok) throw new Error(body?.error?.message || 'The image could not be saved.');
@@ -345,23 +349,33 @@
 				</fieldset>
 				<fieldset class="link-extras">
 					<legend>Optional</legend>
-					<label
-						>Profile photo<input
-							class="field"
+					<div class="avatar-field-group">
+						<label for="avatar-input">Profile photo</label>
+						{#if avatarPreview}
+							<div class="avatar-current-row">
+								<img src={avatarPreview} class="avatar-upload-preview" alt="Current profile" />
+								<div class="avatar-current-actions">
+									<button
+										type="button"
+										class="text-link"
+										onclick={removeAvatar}
+										disabled={avatarBusy}>Remove photo</button
+									>
+								</div>
+							</div>
+						{/if}
+						<input
+							id="avatar-input"
+							class="field avatar-field"
 							bind:this={avatarInput}
 							type="file"
-							accept="image/png,image/jpeg"
+							accept="image/png,image/jpeg,image/webp"
 							onchange={uploadAvatar}
 							disabled={avatarBusy}
-						/><span class="form-note">PNG or JPEG, up to 2 MB. We remove embedded metadata when saving.</span
-						>{#if avatarMessage}<span class="form-note" aria-live="polite">{avatarMessage}</span
-							>{/if}{#if avatarPreview}<img src={avatarPreview} class="avatar-upload-preview" alt="" /><button
-								type="button"
-								class="text-link"
-								onclick={removeAvatar}
-								disabled={avatarBusy}>Remove photo</button
-							>{/if}</label
-					><label
+						/>
+						<span class="form-note">PNG, JPEG or WebP. Automatically optimized to fit.</span>
+						{#if avatarMessage}<span class="form-note" aria-live="polite">{avatarMessage}</span>{/if}
+					</div><label
 						>Link to one social profile<input
 							class="field"
 							type="url"

@@ -182,15 +182,47 @@ func (a *API) publicAvatar(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
+// downsampleImage scales an image down so that max(width, height) <= maxDim.
+func downsampleImage(src image.Image, maxDim int) image.Image {
+	b := src.Bounds()
+	w, h := b.Dx(), b.Dy()
+	if w <= maxDim && h <= maxDim {
+		return src
+	}
+	var newW, newH int
+	if w >= h {
+		newW = maxDim
+		newH = int((int64(h)*int64(maxDim) + int64(w)/2) / int64(w))
+	} else {
+		newH = maxDim
+		newW = int((int64(w)*int64(maxDim) + int64(h)/2) / int64(h))
+	}
+	if newW < 1 {
+		newW = 1
+	}
+	if newH < 1 {
+		newH = 1
+	}
+	dst := image.NewNRGBA(image.Rect(0, 0, newW, newH))
+	for y := 0; y < newH; y++ {
+		srcY := b.Min.Y + (y*h)/newH
+		for x := 0; x < newW; x++ {
+			srcX := b.Min.X + (x*w)/newW
+			dst.Set(x, y, src.At(srcX, srcY))
+		}
+	}
+	return dst
+}
+
 func (a *API) updateAvatar(w http.ResponseWriter, r *http.Request) {
 	u, ok := a.requireUser(w, r)
 	if !ok {
 		return
 	}
-	// Multipart framing adds bytes beyond the file's advertised 2 MB limit.
-	r.Body = http.MaxBytesReader(w, r.Body, 3<<20)
-	if err := r.ParseMultipartForm(2 << 20); err != nil {
-		problem(w, 413, "IMAGE_TOO_LARGE", "Choose an image smaller than 2 MB.")
+	// Multipart framing adds bytes beyond the file's advertised 10 MB limit.
+	r.Body = http.MaxBytesReader(w, r.Body, 12<<20)
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		problem(w, 413, "IMAGE_TOO_LARGE", "Choose an image smaller than 10 MB.")
 		return
 	}
 	f, _, err := r.FormFile("avatar")
@@ -199,9 +231,9 @@ func (a *API) updateAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer f.Close()
-	b, err := io.ReadAll(io.LimitReader(f, (2<<20)+1))
-	if err != nil || len(b) > 2<<20 {
-		problem(w, 413, "IMAGE_TOO_LARGE", "Choose an image smaller than 2 MB.")
+	b, err := io.ReadAll(io.LimitReader(f, (10<<20)+1))
+	if err != nil || len(b) > 10<<20 {
+		problem(w, 413, "IMAGE_TOO_LARGE", "Choose an image smaller than 10 MB.")
 		return
 	}
 	config, format, err := image.DecodeConfig(bytes.NewReader(b))
@@ -209,8 +241,8 @@ func (a *API) updateAvatar(w http.ResponseWriter, r *http.Request) {
 		problem(w, 422, "IMAGE_INVALID", "Use a valid PNG or JPEG image.")
 		return
 	}
-	if config.Width < 1 || config.Height < 1 || config.Width > 4096 || config.Height > 4096 || int64(config.Width)*int64(config.Height) > 12000000 {
-		problem(w, 422, "IMAGE_DIMENSIONS", "Image dimensions must be at most 4096 by 4096 pixels.")
+	if config.Width < 1 || config.Height < 1 || config.Width > 8192 || config.Height > 8192 || int64(config.Width)*int64(config.Height) > 32000000 {
+		problem(w, 422, "IMAGE_DIMENSIONS", "Image dimensions must be at most 8192 by 8192 pixels.")
 		return
 	}
 	img, decodedFormat, err := image.Decode(bytes.NewReader(b))
@@ -229,9 +261,22 @@ func (a *API) updateAvatar(w http.ResponseWriter, r *http.Request) {
 		problem(w, 404, "PROFILE_NOT_FOUND", "Claim a link before adding a profile image.")
 		return
 	}
-	// Decode and re-encode pixels so source metadata is not retained.
+	// Downsample to avatar dimensions (max 512x512) and re-encode to PNG to strip metadata.
+	img = downsampleImage(img, 512)
 	var clean bytes.Buffer
-	if err = png.Encode(&clean, img); err != nil || clean.Len() > 512<<10 {
+	if err = png.Encode(&clean, img); err != nil {
+		problem(w, 422, "IMAGE_INVALID", "The image could not be processed.")
+		return
+	}
+	// If still larger than 512 KB, downsample further until it fits under the database storage limit.
+	for clean.Len() > 512<<10 && (img.Bounds().Dx() > 128 || img.Bounds().Dy() > 128) {
+		clean.Reset()
+		img = downsampleImage(img, img.Bounds().Dx()*3/4)
+		if err = png.Encode(&clean, img); err != nil {
+			break
+		}
+	}
+	if clean.Len() > 512<<10 {
 		problem(w, 422, "IMAGE_TOO_LARGE", "The processed image is too large. Choose a smaller image.")
 		return
 	}

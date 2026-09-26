@@ -118,7 +118,7 @@
 			{#if person.local_simulator && !preview}<p class="pp-status">
 					Development preview · no money will be collected.
 				</p>{/if}
-			<h2>Book a call with {firstName}</h2>
+			<h2>Book a call with {person.name}</h2>
 			{#if person.paused}<p class="pp-unavailable">{person.name} isn’t taking bookings right now.</p>
 			{:else if !person.ready}<p class="pp-unavailable">Bookings open soon. Check back in a little while.</p>
 			{:else}<fieldset class="pp-lengths">
