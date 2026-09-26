@@ -239,8 +239,11 @@ func (a *API) deliverEmail(ctx context.Context, msg emailMessage) bool {
 	if a.mailer != nil {
 		return a.mailer(msg.To, msg.Subject, msg.Text)
 	}
-	if os.Getenv("EMAIL_PROVIDER") == "resend" {
+	switch os.Getenv("EMAIL_PROVIDER") {
+	case "resend":
 		return a.sendResend(ctx, msg)
+	case "sendly":
+		return a.sendSendly(ctx, msg)
 	}
 	if host := os.Getenv("SMTP_HOST"); host != "" && a.env != "production" {
 		from := envOr("EMAIL_FROM", "WantMyTime <local@wantmytime.com>")

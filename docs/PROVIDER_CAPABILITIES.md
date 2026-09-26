@@ -19,7 +19,13 @@ Updated: 2026-09-25
 
 ## Email
 
-- Resend adapter is available with `EMAIL_PROVIDER=resend`, `EMAIL_API_KEY` and a verified `EMAIL_FROM`; it has not been exercised without credentials.
+- Sendly (sendlyai.com) is the chosen provider: `EMAIL_PROVIDER=sendly`, `EMAIL_API_KEY` and a verified `EMAIL_FROM`. Field names follow https://developer.sendlyai.com/docs.
+  - Transactional email (sign-in codes, booking emails, alerts) goes to `POST https://api.sendlyai.com/v1/messages` with `channel`, `to`, `from`, `subject`, `html`, `text`, `attachments` (`filename`, base64 `content`, `contentType`; used for the booking calendar file), `tracking: false` (private booking links are never rewritten) and an `Idempotency-Key` header, so a retry never sends twice. Plain-text emails are also sent as escaped HTML.
+  - Reply-to is not an API field: set it once in Sendly's dashboard (Settings → sender defaults) to the same address as `EMAIL_REPLY_TO`.
+  - Announcements need our own `List-Unsubscribe` headers, which the HTTP API does not take, so they go through Sendly's SMTP relay (`smtp.sendlyai.com:587`, STARTTLS required, PLAIN auth) when `SENDLY_SMTP_USERNAME` and `SENDLY_SMTP_PASSWORD` are set. Without them, announcements still send over HTTP with the unsubscribe link in the footer, but without the one-click headers Gmail and Yahoo expect, and the API logs a warning.
+  - Sendly's own `unsubscribe: true` is deliberately never used: it adds the person to Sendly's suppression list, which skips every later email to them, including sign-in codes and booking emails.
+  - Hard bounces and spam complaints land on Sendly's suppression list and are skipped by Sendly. A `sk_test_` key runs the whole request without delivering, which suits staging.
+- Resend remains available with `EMAIL_PROVIDER=resend` and supports all of the above.
 - Local SMTP is restricted to loopback. OTP logging requires explicit `ALLOW_LOG_OTP=true` in non-production.
 - Delivery credentials and verified sender domain remain external launch gates.
 

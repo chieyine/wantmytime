@@ -14,7 +14,7 @@ import (
 )
 
 func (a *API) emailConfigured() bool {
-	if os.Getenv("EMAIL_PROVIDER") == "resend" {
+	if provider := os.Getenv("EMAIL_PROVIDER"); provider == "resend" || provider == "sendly" {
 		return os.Getenv("EMAIL_API_KEY") != "" && os.Getenv("EMAIL_FROM") != ""
 	}
 	return a.env != "production" && os.Getenv("SMTP_HOST") != ""

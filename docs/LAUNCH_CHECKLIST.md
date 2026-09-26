@@ -25,8 +25,9 @@ The product code is complete for buyers and sellers in every flow (see [FLOW_WAL
 
 ## 3. Email
 
-- [ ] Resend (or similar) account; verify `wantmytime.com` (SPF, DKIM, DMARC).
-- [ ] `EMAIL_PROVIDER=resend`, `EMAIL_API_KEY`, `EMAIL_FROM="WantMyTime <bookings@wantmytime.com>"`, and `EMAIL_REPLY_TO=support@wantmytime.com` so people can reply.
+- [ ] Sendly account; verify `wantmytime.com` (SPF, DKIM, DMARC). Rotate any API key that was ever pasted into a chat or document.
+- [ ] `EMAIL_PROVIDER=sendly`, `EMAIL_API_KEY` (in the secret manager only), `EMAIL_FROM="WantMyTime <bookings@wantmytime.com>"`, and `EMAIL_REPLY_TO=support@wantmytime.com` so people can reply.
+- [ ] In Sendly's dashboard: set the reply-to address (Settings → sender defaults) to `support@wantmytime.com`, and create SMTP relay credentials for announcements (`SENDLY_SMTP_USERNAME`, `SENDLY_SMTP_PASSWORD`). Use a `sk_test_` key in staging.
 
 - [ ] Phone notifications: run `aside-api vapid-keys` once and store the two keys it prints as `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` (never change them afterwards).
 
