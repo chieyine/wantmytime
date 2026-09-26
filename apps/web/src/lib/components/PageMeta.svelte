@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { env } from '$env/dynamic/public';
+	import { configuredSiteOrigin } from '$lib/site';
 	import { page } from '$app/state';
 	import { brand } from '$lib/brand';
 	// Title, description, canonical address and share previews for public pages.
 	let { title, description } = $props<{ title: string; description: string }>();
-	const origin = (env.PUBLIC_APP_ORIGIN || `https://${brand.domain}`).replace(/\/$/, '');
+	const origin = configuredSiteOrigin();
 	let url = $derived(`${origin}${page.url.pathname === '/' ? '/' : page.url.pathname}`);
 </script>
 

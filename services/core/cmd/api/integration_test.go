@@ -241,9 +241,6 @@ func (h *harness) newSeller(mode string) seller {
 	c := h.client(handle + "@seller.test")
 	c.signIn("claim")
 	profile := map[string]any{"handle": handle, "name": "Seller " + handle, "mode": mode, "base_30_minor": 1000000, "durations": []int{15, 30, 60}, "timezone": "Africa/Lagos"}
-	if mode == "offer" {
-		profile["base_30_minor"] = 0
-	}
 	c.expect(201, "POST", "/api/v1/me/link", profile)
 	windows := []map[string]any{}
 	for day := 0; day < 7; day++ {
@@ -750,7 +747,7 @@ func TestLateOfferPaymentRecordsException(t *testing.T) {
 	h := newHarness(t)
 	fake := newFakeKora(t)
 	enablePayments(t, fake)
-	s := h.newSeller("offer")
+	s := h.newSeller("both")
 	buyer := h.client(unique("o") + "@buyer.test")
 	buyer.signIn("guest_offer")
 	offer := buyer.expect(201, "POST", "/api/v1/offers", map[string]any{"seller": s.handle, "name": "Ola", "duration_minutes": 30, "amount_minor": 500000}, "Idempotency-Key", idempotencyKey())
@@ -874,16 +871,18 @@ func TestStaleHoldDoesNotBlockSlotAndHoldLimit(t *testing.T) {
 	}
 }
 
-func TestOfferModeSellerRejectsFixedQuotesAndMalformedIDs(t *testing.T) {
+func TestEveryLinkHasAPriceAndMalformedIDs(t *testing.T) {
 	h := newHarness(t)
-	t.Setenv("LOCAL_PAYMENT_SIMULATOR", "true")
-	s := h.newSeller("offer")
+	s := h.newSeller("fixed")
+	// "Offers only" is gone: a link always has a price, and may also take offers.
+	link := s.client.expect(200, "GET", "/api/v1/me/link", nil)
+	link["mode"] = "offer"
+	s.client.expect(422, "PATCH", "/api/v1/me/link", link)
+	link["mode"] = "both"
+	link["base_30_minor"] = 0
+	s.client.expect(422, "PATCH", "/api/v1/me/link", link)
 	buyer := h.guestBuyer()
-	res := buyer.do("POST", "/api/v1/quotes", map[string]any{"seller": s.handle, "name": "B", "duration_minutes": 30, "starts_at": h.slot(s.handle, 0)}, "Idempotency-Key", idempotencyKey())
-	if res.Status != 409 || !strings.Contains(string(res.Body), "OFFER_MODE_ONLY") {
-		t.Fatalf("fixed quote on offer seller: %d %s", res.Status, res.Body)
-	}
-	if res = buyer.do("GET", "/api/v1/bookings/not-a-uuid", nil); res.Status != 404 {
+	if res := buyer.do("GET", "/api/v1/bookings/not-a-uuid", nil); res.Status != 404 {
 		t.Fatalf("malformed id: %d", res.Status)
 	}
 }
@@ -918,7 +917,7 @@ func TestEndpointSmoke(t *testing.T) {
 	loc, _ := time.LoadLocation("Africa/Lagos")
 	future := time.Now().In(loc).AddDate(0, 0, 3).Format("2006-01-02")
 
-	offerSeller := h.newSeller("offer")
+	offerSeller := h.newSeller("both")
 	offerBuyer := h.client(unique("ob") + "@buyer.test")
 	offerBuyer.signIn("guest_offer")
 	offer := offerBuyer.expect(201, "POST", "/api/v1/offers", map[string]any{"seller": offerSeller.handle, "name": "Offer Buyer", "duration_minutes": 30, "amount_minor": 300000}, "Idempotency-Key", idempotencyKey())
@@ -1045,14 +1044,47 @@ func TestSellerChangesTheirLink(t *testing.T) {
 	claimer.signIn("claim")
 	claimer.expect(409, "POST", "/api/v1/me/link", map[string]any{"handle": old, "name": "Impostor", "mode": "fixed", "base_30_minor": 1000000, "durations": []int{30}, "timezone": "Africa/Lagos"})
 	s.expect(422, "PUT", "/api/v1/me/link/handle", map[string]string{"handle": "api"})
+	// One change every six months: the page says when, and a second change waits.
+	next6 := s.expect(200, "GET", "/api/v1/me/link", nil)["next_handle_change_at"]
+	if when, err := time.Parse(time.RFC3339, fmt.Sprint(next6)); err != nil || when.Before(time.Now().AddDate(0, 5, 27)) {
+		t.Fatalf("next change at %v", next6)
+	}
+	if msg := s.expect(429, "PUT", "/api/v1/me/link/handle", map[string]string{"handle": old})["error"]; !strings.Contains(fmt.Sprint(msg), "once every 6 months") {
+		t.Fatalf("wait message %v", msg)
+	}
+	// Six months on, the seller gets one email and can change it again.
+	if _, err := itPool.Exec(context.Background(), `UPDATE seller_profiles SET handle_changed_at=now()-interval '6 months 1 day',handle_reminder_due=now()-interval '1 day' WHERE handle=$1`, next); err != nil {
+		t.Fatal(err)
+	}
+	itMail.mu.Lock()
+	since := len(itMail.messages)
+	itMail.mu.Unlock()
+	if err := h.api.sendLinkChangeReminders(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.api.sendLinkChangeReminders(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	itMail.mu.Lock()
+	var reminders []emailMessage
+	for _, m := range itMail.messages[since:] {
+		if m.To == s.client.email {
+			reminders = append(reminders, m)
+		}
+	}
+	itMail.mu.Unlock()
+	if len(reminders) != 1 || reminders[0].Subject != "You can change your link again" || !strings.Contains(reminders[0].Text, "/app/link") {
+		t.Fatalf("reminders %+v", reminders)
+	}
+	if _, ok := s.expect(200, "GET", "/api/v1/me/link", nil)["next_handle_change_at"]; ok {
+		t.Fatal("the wait is over")
+	}
 	s.expect(200, "PUT", "/api/v1/me/link/handle", map[string]string{"handle": old})
 	if got := anon.expect(200, "GET", "/api/v1/people/"+next, nil)["handle"]; got != old {
 		t.Fatalf("going back: %v", got)
 	}
-	// At most three changes in 30 days.
-	s.expect(200, "PUT", "/api/v1/me/link/handle", map[string]string{"handle": unique("third")})
-	s.expect(429, "PUT", "/api/v1/me/link/handle", map[string]string{"handle": unique("fourth")})
-	if n := scalar[int64](t, `SELECT count(*) FROM audit_events WHERE actor_id=$1 AND action='seller.handle_changed'`, s.userID); n != 3 {
+	s.expect(429, "PUT", "/api/v1/me/link/handle", map[string]string{"handle": unique("third")})
+	if n := scalar[int64](t, `SELECT count(*) FROM audit_events WHERE actor_id=$1 AND action='seller.handle_changed'`, s.userID); n != 2 {
 		t.Fatalf("link changes audited %d times", n)
 	}
 	// Deleting the account stops forwards and holds every earlier link.

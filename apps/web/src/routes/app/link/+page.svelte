@@ -1,10 +1,9 @@
 <script lang="ts">
+	import { siteOrigin } from '$lib/site';
 	import { untrack } from 'svelte';
 	import { api } from '$lib/api';
-	import { timezoneOptions } from '$lib/timezones';
 	import { currencySymbol } from '$lib/money';
 	import PublicPersonPage from '$lib/components/PublicPersonPage.svelte';
-	import { env } from '$env/dynamic/public';
 	import { handlePattern, linkLabel, validHandle } from '$lib/handle';
 	import { fetchHandleSuggestions } from '$lib/handle-suggestions';
 	import HandleSuggestions from '$lib/components/HandleSuggestions.svelte';
@@ -14,8 +13,10 @@
 	let handle = $state(saved?.handle ?? '');
 	let name = $state(saved?.name ?? '');
 	let identity_url = $state(saved?.identity_url || '');
-	let mode = $state<'fixed' | 'offer' | 'both'>(saved?.mode ?? 'fixed');
 	let amount = $state(saved ? saved.base_30_minor / 100 : 10000);
+	// A price, plus one switch for offers.
+	let acceptOffers = $state(saved?.mode === 'both');
+	let mode = $derived<'fixed' | 'both'>(acceptOffers ? 'both' : 'fixed');
 	let durations = $state<number[]>(saved?.durations ?? [15, 30, 60]);
 	let timezone = $state(saved?.timezone ?? 'UTC');
 	let currency = $state(saved?.currency || 'NGN');
@@ -37,7 +38,7 @@
 					name: saved.name,
 					identity_url: saved.identity_url || '',
 					mode: saved.mode,
-					amount: saved.mode !== 'offer' ? saved.base_30_minor : 0,
+					amount: saved.base_30_minor,
 					durations: saved.durations,
 					timezone: saved.timezone,
 					paused: saved.paused
@@ -50,7 +51,7 @@
 			name,
 			identity_url,
 			mode,
-			amount: mode !== 'offer' ? Math.round(Number(amount || 0) * 100) : 0,
+			amount: Math.round(Number(amount || 0) * 100),
 			durations,
 			timezone,
 			paused
@@ -84,7 +85,7 @@
 		identity_label: identityLabel,
 		avatar_url: avatarPreview,
 		mode,
-		base_30_minor: mode !== 'offer' ? Math.round(Number(amount || 0) * 100) : 0,
+		base_30_minor: Math.round(Number(amount || 0) * 100),
 		durations,
 		timezone,
 		paused,
@@ -98,9 +99,12 @@
 	let handleBusy = $state(false);
 	let handleMessage = $state('');
 	let handleSuggestions = $state<string[]>([]);
-	let linkHost = $derived(
-		linkLabel(env.PUBLIC_APP_ORIGIN || (typeof window === 'undefined' ? '' : window.location.origin))
-	);
+	let linkHost = $derived(linkLabel(siteOrigin()));
+	// A link can change once every six months; until then the field is read-only.
+	let nextChange = $state(saved?.next_handle_change_at ?? '');
+	let locked = $derived(!!nextChange && new Date(nextChange) > new Date());
+	const longDate = (value: string) =>
+		new Date(value).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
 	$effect(() => {
 		const wanted = newHandle.trim().toLowerCase();
 		if (!exists || wanted === handle) {
@@ -130,18 +134,22 @@
 		handleBusy = true;
 		handleMessage = '';
 		try {
-			const r = await api<{ handle: string; previous: string }>('/api/v1/me/link/handle', {
-				method: 'PUT',
-				body: JSON.stringify({ handle: newHandle.trim().toLowerCase() })
-			});
+			const r = await api<{ handle: string; previous: string; next_handle_change_at: string }>(
+				'/api/v1/me/link/handle',
+				{
+					method: 'PUT',
+					body: JSON.stringify({ handle: newHandle.trim().toLowerCase() })
+				}
+			);
 			handle = r.handle;
+			nextChange = r.next_handle_change_at;
 			newHandle = r.handle;
 			if (avatarPreview)
 				avatarPreview = avatarPreview.replace(
 					`/people/${encodeURIComponent(r.previous)}/`,
 					`/people/${encodeURIComponent(r.handle)}/`
 				);
-			handleMessage = `Your link is now ${linkHost}/${r.handle}. The old one forwards here.`;
+			handleMessage = `Your link is now ${linkHost}/${r.handle}. The old one forwards here. You can change it again on ${longDate(r.next_handle_change_at)}.`;
 		} catch (error) {
 			handleMessage = error instanceof Error ? error.message : 'Your link could not be changed.';
 		} finally {
@@ -161,7 +169,7 @@
 			name,
 			identity_url,
 			mode,
-			base_30_minor: mode !== 'offer' ? Math.round(Number(amount || 0) * 100) : 0,
+			base_30_minor: Math.round(Number(amount || 0) * 100),
 			durations: [...durations],
 			timezone,
 			paused
@@ -223,8 +231,8 @@
 
 <svelte:head><title>Your link — WantMyTime</title></svelte:head>
 <section class="form-page app-page">
-	<a class="back-link" href="/app">← Overview</a>
-	<p class="eyebrow">Your link</p>
+	<a class="back-link" href="/app">← Home</a>
+	<p class="eyebrow">Your page</p>
 	<h1 class="page-heading">A page that sounds like you.</h1>
 	{#if !exists}<p class="page-intro">
 			You have not claimed a link yet. Set up your name, link, price and conversation lengths.
@@ -268,6 +276,7 @@
 							id="link-handle-input"
 							class="field"
 							bind:value={newHandle}
+							readonly={locked}
 							minlength="3"
 							maxlength="24"
 							pattern={handlePattern}
@@ -286,10 +295,11 @@
 					<p id="link-handle-note" class="form-note" aria-live="polite">
 						{#if handleMessage}{handleMessage}{:else if handleState === 'checking'}Checking…{:else if handleState === 'available'}{linkHost}/{newHandle
 								.trim()
-								.toLowerCase()} is free. Your old link will keep working and forward here.{:else if handleState === 'taken'}That
-							link is taken. Pick a free one below or try another.{:else if handleState === 'invalid'}Use 3 to 24
-							letters, numbers or single hyphens.{:else}This is the address people use to book you. You can change it up
-							to 3 times in 30 days.{/if}
+								.toLowerCase()} is free. Your old link will keep working and forward here. After this, you can’t change it
+							again for 6 months.{:else if handleState === 'taken'}That link is taken. Pick a free one below or try
+							another.{:else if handleState === 'invalid'}Use 3 to 24 letters, numbers or single hyphens.{:else if locked}This
+							is the address people use to book you. You can change it again on {longDate(nextChange)}, and we’ll email
+							you then.{:else}This is the address people use to book you. You can change it once every 6 months.{/if}
 					</p>
 					{#if handleState === 'taken'}<HandleSuggestions
 							suggestions={handleSuggestions}
@@ -304,57 +314,26 @@
 							disabled={handleBusy}>{handleBusy ? 'Changing…' : 'Change link'}</button
 						>{/if}
 				</div>
-				<label>Display name<input class="field" bind:value={name} maxlength="80" required /></label><label
-					>Profile photo · optional<input
-						class="field"
-						bind:this={avatarInput}
-						type="file"
-						accept="image/png,image/jpeg"
-						onchange={uploadAvatar}
-						disabled={avatarBusy}
-					/><span class="form-note">PNG or JPEG, up to 2 MB. We remove embedded metadata when saving.</span
-					>{#if avatarMessage}<span class="form-note" aria-live="polite">{avatarMessage}</span
-						>{/if}{#if avatarPreview}<img src={avatarPreview} class="avatar-upload-preview" alt="" /><button
-							type="button"
-							class="text-link"
-							onclick={removeAvatar}
-							disabled={avatarBusy}>Remove photo</button
-						>{/if}</label
-				><label
-					>Link to one social profile · optional<input
-						class="field"
-						type="url"
-						bind:value={identity_url}
-						placeholder="https://instagram.com/…"
-					/></label
-				>
-				<fieldset>
-					<legend>How should requests work?</legend>
-					<div class="choice-row choice-row-three">
-						<label class:chosen={mode === 'fixed'}
-							><input type="radio" bind:group={mode} value="fixed" /> I’ll set a price</label
-						><label class:chosen={mode === 'offer'}
-							><input type="radio" bind:group={mode} value="offer" /> Let people make an offer</label
-						><label class:chosen={mode === 'both'}
-							><input type="radio" bind:group={mode} value="both" /> Both: they choose</label
-						>
+				<label>Display name<input class="field" bind:value={name} maxlength="80" required /></label>
+				<label
+					>Your price for 30 minutes
+					<div class="money-input">
+						<span>{currencySymbol(currency).trim()}</span><input
+							type="number"
+							bind:value={amount}
+							inputmode="decimal"
+							min="1"
+							step="0.01"
+							required
+						/>
 					</div>
-					{#if mode === 'both'}<span class="form-note"
-							>People can book at your price straight away, or send you an offer you can accept, counter or decline.</span
-						>{/if}
-				</fieldset>
-				{#if mode !== 'offer'}<label
-						>Your price for 30 minutes
-						<div class="money-input">
-							<span>{currencySymbol(currency).trim()}</span><input
-								type="number"
-								bind:value={amount}
-								inputmode="decimal"
-								min="1"
-								step="0.01"
-								required
-							/>
-						</div></label
+					<span class="form-note">15 minutes costs half this, 60 minutes costs double.</span></label
+				>
+				<label class="check-line"
+					><input type="checkbox" bind:checked={acceptOffers} /> Also let people offer a different price</label
+				>
+				{#if acceptOffers}<span class="form-note"
+						>People can book at your price straight away, or send an offer you can accept, counter or decline.</span
 					>{/if}
 				<fieldset>
 					<legend>Available conversation lengths</legend>
@@ -364,11 +343,33 @@
 							>{/each}
 					</div>
 				</fieldset>
-				<label
-					>Your timezone<select class="field" bind:value={timezone}
-						>{#each timezoneOptions(timezone) as zone (zone)}<option value={zone}>{zone}</option>{/each}</select
-					></label
-				>
+				<fieldset class="link-extras">
+					<legend>Optional</legend>
+					<label
+						>Profile photo<input
+							class="field"
+							bind:this={avatarInput}
+							type="file"
+							accept="image/png,image/jpeg"
+							onchange={uploadAvatar}
+							disabled={avatarBusy}
+						/><span class="form-note">PNG or JPEG, up to 2 MB. We remove embedded metadata when saving.</span
+						>{#if avatarMessage}<span class="form-note" aria-live="polite">{avatarMessage}</span
+							>{/if}{#if avatarPreview}<img src={avatarPreview} class="avatar-upload-preview" alt="" /><button
+								type="button"
+								class="text-link"
+								onclick={removeAvatar}
+								disabled={avatarBusy}>Remove photo</button
+							>{/if}</label
+					><label
+						>Link to one social profile<input
+							class="field"
+							type="url"
+							bind:value={identity_url}
+							placeholder="https://instagram.com/…"
+						/></label
+					>
+				</fieldset>
 				<label class="check-line"><input type="checkbox" bind:checked={paused} /> Pause new booking requests</label>
 				<div class="notice notice-warning">
 					Paused means your page stays up but nobody can book. Bookings you already have stay in place.

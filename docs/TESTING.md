@@ -48,7 +48,7 @@ Covered journeys:
 
 - Cancellations, refunds, no-shows and reviews (`lifecycle_integration_test.go`):
   - Policy arithmetic, including the grace period and proportional refund shares.
-  - A buyer cancellation under a frozen moderate policy is refused when the shown refund is stale, then succeeds. The time is released.
+  - A buyer cancellation gets nothing under 24 hours and a full refund from 24 hours out; a stale refund confirmation is refused, then the cancel succeeds and the time is released.
   - The refund goes processing then successful at Kora via webhook, with a balanced journal, the seller's share taken from the held payout (the rest is paid out), a partly refunded booking, and emails with a calendar cancellation.
   - A seller cancellation before the payout refunds in full and cancels the payout; nothing is transferred and the seller owes nothing.
   - With automatic refunds off, nothing is sent to Kora. Recording a refund is audited and cannot happen twice.

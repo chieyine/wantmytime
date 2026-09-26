@@ -104,7 +104,7 @@
 
 <svelte:head><title>Offer — WantMyTime</title></svelte:head>
 <section class="form-page app-page workspace-offer-detail">
-	<a class="back-link" href="/app/offers">← Offers</a>
+	<a class="back-link" href="/app/bookings">← Bookings</a>
 	<p class="eyebrow">Offer detail</p>
 	<h1 class="page-heading">A THOUGHTFUL<br />REQUEST.</h1>
 	{#if !offer}<div class="notice notice-warning">{message}</div>

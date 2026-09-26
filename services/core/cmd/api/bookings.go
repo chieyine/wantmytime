@@ -139,15 +139,15 @@ func (a *API) getBooking(w http.ResponseWriter, r *http.Request) {
 // bookingLifecycle adds cancellation, refund, no-show and review details to a
 // booking for one participant.
 func (a *API) bookingLifecycle(ctx context.Context, bookingID, userID, role string) (map[string]any, error) {
-	var policy, cancelledBy string
+	var cancelledBy string
 	var cancelledAt *time.Time
 	var starts time.Time
 	var duration int
 	var state string
-	if err := a.db.QueryRow(ctx, `SELECT cancellation_policy,COALESCE(cancelled_by_role,''),cancelled_at,starts_at,duration_minutes,state FROM bookings WHERE id=$1`, bookingID).Scan(&policy, &cancelledBy, &cancelledAt, &starts, &duration, &state); err != nil {
+	if err := a.db.QueryRow(ctx, `SELECT COALESCE(cancelled_by_role,''),cancelled_at,starts_at,duration_minutes,state FROM bookings WHERE id=$1`, bookingID).Scan(&cancelledBy, &cancelledAt, &starts, &duration, &state); err != nil {
 		return nil, err
 	}
-	out := map[string]any{"cancellation_policy": policyOrDefault(policy), "cancelled_at": cancelledAt, "cancelled_by_role": cancelledBy}
+	out := map[string]any{"cancellation_policy": cancellationRule, "cancelled_at": cancelledAt, "cancelled_by_role": cancelledBy}
 	var refundAmount int64
 	var refundState string
 	switch err := a.db.QueryRow(ctx, `SELECT amount_minor,state FROM refunds WHERE booking_id=$1 ORDER BY (state='failed'),created_at DESC LIMIT 1`, bookingID).Scan(&refundAmount, &refundState); {

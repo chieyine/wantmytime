@@ -51,11 +51,6 @@
 	onMount(async () => {
 		try {
 			person = await api<Person>(`/api/v1/people/${encodeURIComponent(seller)}`);
-			if (person.mode === 'offer') {
-				// This link takes offers, not fixed-price bookings.
-				window.location.replace(`/offer/new?seller=${encodeURIComponent(seller)}&duration=${duration}`);
-				return;
-			}
 			viewerZone = viewerTimeZone();
 			day = todayIn(zone);
 			if (person.local_simulator || person.provider_checkout_enabled) {

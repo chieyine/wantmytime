@@ -9,7 +9,7 @@ test('a new seller gets a link suggested from their name and a public page', asy
 	await expect(page.getByLabel('Your link')).toHaveValue(/^ngozi-?adeyemi\d?$/);
 
 	const handle = await signUpSeller(page, seller);
-	await expect(page.getByRole('heading', { name: /nearly open/i })).toBeVisible();
+	await expect(page.getByRole('heading', { name: /few steps from your first booking/i })).toBeVisible();
 
 	// The pre-ticked news box reached the API, with the same wording people saw.
 	const news = await (await page.request.get('/api/v1/me/marketing')).json();
@@ -67,7 +67,7 @@ test('a seller taking both a price and offers accepts an offer', async ({ page, 
 	await expect(buyer).toHaveURL(/\/offer\/[0-9a-f-]{36}/);
 	await buyerContext.close();
 
-	await page.goto('/app/offers');
+	await page.goto('/app/bookings');
 	await page.getByText('Ifeoma Nnaji').first().click();
 	await page.getByRole('button', { name: /^Accept/ }).click();
 	await expect(page.getByText(/Accepted\. Ifeoma Nnaji has been emailed/)).toBeVisible();
@@ -83,6 +83,10 @@ test('changing the link keeps the old one working', async ({ page }) => {
 	await expect(page.locator('#link-handle-note')).toContainText('is free');
 	await page.getByRole('button', { name: 'Change link' }).click();
 	await expect(page.locator('#link-handle-note')).toContainText(`/${next}`);
+	// Once every six months: the field locks and says when it opens again.
+	await page.reload();
+	await expect(page.locator('#link-handle-note')).toContainText('You can change it again on');
+	await expect(page.getByLabel('Your link')).toHaveAttribute('readonly', '');
 
 	await page.goto(`/${first}`);
 	await expect(page).toHaveURL(new RegExp(`/${next}$`));
@@ -105,4 +109,40 @@ test('a taken link offers free ones to pick, like Gmail', async ({ page, browser
 	await expect(other.getByLabel('Your link')).toHaveValue(picked);
 	await expect(other.locator('#claim-handle-note')).toContainText('is yours if you want it');
 	await other.context().close();
+});
+
+test('a seller sets their hours by ticking days', async ({ page }) => {
+	const seller = newPerson('Halima', 'Garba');
+	await signUpSeller(page, seller);
+	await page.goto('/app/availability');
+	// A first visit starts from weekdays, 9 to 5.
+	await expect(page.getByRole('checkbox', { name: 'Monday' })).toBeChecked();
+	await expect(page.getByRole('checkbox', { name: 'Sunday' })).not.toBeChecked();
+
+	await page.getByLabel('Monday until').fill('13:00');
+	await page.getByRole('button', { name: 'Copy to every open day' }).click();
+	await page.getByRole('checkbox', { name: 'Friday' }).uncheck();
+	await page.getByRole('checkbox', { name: 'Saturday' }).check();
+	await page.getByRole('button', { name: /save hours/i }).click();
+	await expect(page.getByText('HOURS SAVED')).toBeVisible();
+
+	const saved = await (await page.request.get('/api/v1/me/availability')).json();
+	const days = saved.windows.map((w: { weekday: number; end: string }) => `${w.weekday}-${w.end.slice(0, 5)}`);
+	expect(days).toEqual(['1-13:00', '2-13:00', '3-13:00', '4-13:00', '6-13:00']);
+});
+
+test('a seller who skipped news at sign-up is asked once on the dashboard', async ({ page }) => {
+	const seller = newPerson('Chidi', 'Eze');
+	await signUpSeller(page, seller, undefined, { news: false });
+	await page.goto('/app');
+	const prompt = page.getByRole('region', { name: 'Hear about new features first.' });
+	await expect(prompt).toBeVisible();
+	await expect(prompt).toContainText(marketingWording);
+	await prompt.getByRole('button', { name: 'Yes, send me news' }).click();
+	await expect(page.getByText('You’re in.')).toBeVisible();
+	expect(await (await page.request.get('/api/v1/me/marketing')).json()).toMatchObject({ subscribed: true, ask: false });
+
+	await page.reload();
+	await page.waitForLoadState('networkidle');
+	await expect(page.locator('.news-prompt')).toHaveCount(0);
 });

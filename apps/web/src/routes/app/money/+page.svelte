@@ -10,12 +10,14 @@
 	let currency = $derived(data.payouts?.currency || 'NGN');
 	const formatNaira = (minor: number) => formatMoney(minor, currency);
 	let hasBank = $derived(data.hasBank);
+	let account = $derived(data.account);
+	let owed = $derived(data.owed);
 	let message = $derived(data.loadError);
 </script>
 
 <svelte:head><title>Money — WantMyTime</title></svelte:head>
 <section class="form-page app-page workspace-money">
-	<a class="back-link" href="/app">← Overview</a>
+	<a class="back-link" href="/app">← Home</a>
 	<p class="eyebrow">Money</p>
 	<h1 class="page-heading">What you’ve made.</h1>
 	<p class="page-intro">
@@ -25,10 +27,18 @@
 	{#if paused}<p class="notice notice-warning">
 			Payouts are paused for a short while on our side. Nothing is lost; they go out as soon as the pause lifts.
 		</p>{/if}
-	{#if hasBank === false}<div class="notice notice-warning">
-			Add your payout account so we know where to send your money. <a class="text-link" href="/app/settings/payouts"
-				>Add it now ↗</a
-			>
+	<a class="money-account" class:missing={hasBank === false} href="/app/money/payouts"
+		><span>PAID TO</span><strong
+			>{account
+				? `${account.bank_name} ••${account.account_last4}`
+				: hasBank === false
+					? 'Add your payout account'
+					: '—'}</strong
+		><b>{account ? 'Change' : 'Add'} ↗</b></a
+	>
+	{#if owed && owed.outstanding_minor > 0}<div class="notice notice-warning">
+			You have {formatMoney(owed.outstanding_minor, owed.currency)} to repay from earlier refunds. Up to {owed.max_share_bps /
+				100}% of your share on each new booking goes towards it until it is cleared.
 		</div>{/if}
 	{#if message}<div class="notice notice-warning" role="alert">{message}</div>
 	{:else}
@@ -42,7 +52,7 @@
 			<div class="money-empty">
 				<h2>NOTHING YET.</h2>
 				<p>Your first payout shows up here the moment someone pays for your time.</p>
-				<a class="button button-secondary" href="/app/share">Share your link ↗</a>
+				<a class="button button-secondary" href="/app">Share your link ↗</a>
 			</div>
 		{:else}
 			<div class="list-stack">
@@ -63,10 +73,6 @@
 				{/each}
 			</div>
 		{/if}
-		<p class="form-note">
-			We keep 5% of each booking. Payout details are under <a class="text-link" href="/app/settings/payouts"
-				>Settings → Payouts</a
-			>.
-		</p>
+		<p class="form-note">We keep 5% of each booking.</p>
 	{/if}
 </section>

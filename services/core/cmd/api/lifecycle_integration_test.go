@@ -45,34 +45,18 @@ func journalBalanced(t *testing.T, sourceType, sourceID string) bool {
 	return scalar[bool](t, `SELECT COALESCE(sum(CASE WHEN side='debit' THEN amount_minor ELSE -amount_minor END),1)=0 FROM ledger_entries e JOIN ledger_journals j ON j.id=e.journal_id WHERE j.source_type=$1 AND j.source_id=$2`, sourceType, sourceID)
 }
 
-func TestCancellationPolicyArithmetic(t *testing.T) {
+func TestCancellationRuleArithmetic(t *testing.T) {
 	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
-	booked := now.Add(-48 * time.Hour) // outside the one-hour grace period
-	cases := []struct {
-		policy string
-		notice time.Duration
-		want   int64
-	}{
-		{"flexible", 25 * time.Hour, 100}, {"flexible", 23 * time.Hour, 0},
-		{"moderate", 73 * time.Hour, 100}, {"moderate", 30 * time.Hour, 50}, {"moderate", 2 * time.Hour, 0},
-		{"strict", 8 * 24 * time.Hour, 50}, {"strict", 6 * 24 * time.Hour, 0},
-		{"unknown", 25 * time.Hour, 100}, // falls back to flexible
-	}
-	for _, c := range cases {
-		if got := buyerRefundPercent(c.policy, booked, now.Add(c.notice), now); got != c.want {
-			t.Errorf("%s with %s notice: %d%%, want %d%%", c.policy, c.notice, got, c.want)
+	for notice, want := range map[time.Duration]int64{25 * time.Hour: 100, 24 * time.Hour: 100, 23 * time.Hour: 0, 0: 0, -time.Hour: 0} {
+		if got := buyerRefundPercent(now.Add(notice), now); got != want {
+			t.Errorf("%s notice: %d%%, want %d%%", notice, got, want)
 		}
 	}
-	// Grace period: cancelling within an hour of booking, a day or more ahead.
-	if got := buyerRefundPercent("strict", now.Add(-30*time.Minute), now.Add(48*time.Hour), now); got != 100 {
-		t.Errorf("grace period refund %d%%", got)
+	if drop := nextRefundDrop(now.Add(100*time.Hour), now); !drop.Equal(now.Add(76 * time.Hour)) {
+		t.Errorf("the full refund should end 24h before the start, got %s", drop)
 	}
-	if got := buyerRefundPercent("strict", now.Add(-30*time.Minute), now.Add(3*time.Hour), now); got != 0 {
-		t.Errorf("grace period must not apply to imminent bookings, got %d%%", got)
-	}
-	drop := nextRefundDrop("moderate", booked, now.Add(100*time.Hour), now)
-	if !drop.Equal(now.Add(28 * time.Hour)) {
-		t.Errorf("moderate refund should drop 72h before start, got %s", drop)
+	if drop := nextRefundDrop(now.Add(3*time.Hour), now); !drop.IsZero() {
+		t.Errorf("no refund left to lose, got %s", drop)
 	}
 	if p, s := refundShares(500000, 1000000, 50000); p != 25000 || s != 475000 {
 		t.Errorf("refund shares %d/%d", p, s)
@@ -82,35 +66,37 @@ func TestCancellationPolicyArithmetic(t *testing.T) {
 	}
 }
 
-func TestBuyerCancellationRefundsPerPolicy(t *testing.T) {
+func TestBuyerCancellationRefunds(t *testing.T) {
 	h := newHarness(t)
 	fake := newFakeKora(t)
 	enablePayments(t, fake)
 	t.Setenv("REFUNDS_ENABLED", "true")
 	s := h.newSeller("fixed")
-	s.client.expect(200, "PUT", "/api/v1/me/cancellation-policy", map[string]string{"policy": "moderate"})
 	profile := h.client("").expect(200, "GET", "/api/v1/people/"+s.handle, nil)
-	if profile["cancellation_policy"].(map[string]any)["key"] != "moderate" {
-		t.Fatalf("public profile policy: %v", profile["cancellation_policy"])
+	if profile["cancellation_policy"].(map[string]any)["name"] != "Flexible" {
+		t.Fatalf("public profile rule: %v", profile["cancellation_policy"])
 	}
 	buyer, bookingID, reference := paidBooking(t, h, fake, s, h.slotOn(s.handle, 3, 0))
-	if got := scalar[string](t, `SELECT cancellation_policy FROM bookings WHERE id=$1`, bookingID); got != "moderate" {
-		t.Fatalf("booking policy snapshot %s", got)
+	moveStart := func(interval string) {
+		if _, err := itPool.Exec(context.Background(), `UPDATE bookings SET starts_at=now()+$2::interval WHERE id=$1`, bookingID, interval); err != nil {
+			t.Fatal(err)
+		}
 	}
-	// A later policy change never touches the existing booking.
-	s.client.expect(200, "PUT", "/api/v1/me/cancellation-policy", map[string]string{"policy": "strict"})
-	// Put the booking 30 hours out, booked two hours ago: moderate gives 50%.
-	if _, err := itPool.Exec(context.Background(), `UPDATE bookings SET starts_at=now()+interval '30 hours',created_at=now()-interval '2 hours' WHERE id=$1`, bookingID); err != nil {
-		t.Fatal(err)
+	// Less than a day before: nothing back.
+	moveStart("20 hours")
+	if preview := buyer.expect(200, "GET", "/api/v1/bookings/"+bookingID+"/cancellation-preview", nil); preview["refund_percent"] != float64(0) || preview["refund_minor"] != float64(0) {
+		t.Fatalf("late preview %v", preview)
 	}
+	// A day or more before: everything back.
+	moveStart("30 hours")
 	preview := buyer.expect(200, "GET", "/api/v1/bookings/"+bookingID+"/cancellation-preview", nil)
-	if preview["refund_percent"] != float64(50) || preview["refund_minor"] != float64(500000) || preview["policy"] != "moderate" {
+	if preview["refund_percent"] != float64(100) || preview["refund_minor"] != float64(1000000) || preview["refund_drops_at"] == nil {
 		t.Fatalf("preview %v", preview)
 	}
-	if res := buyer.do("POST", "/api/v1/bookings/"+bookingID+"/cancel", map[string]any{"expected_refund_minor": 1000000}); res.Status != 409 || !strings.Contains(string(res.Body), "REFUND_CHANGED") {
+	if res := buyer.do("POST", "/api/v1/bookings/"+bookingID+"/cancel", map[string]any{"expected_refund_minor": 0}); res.Status != 409 || !strings.Contains(string(res.Body), "REFUND_CHANGED") {
 		t.Fatalf("stale refund confirmation: %d %s", res.Status, res.Body)
 	}
-	buyer.expect(200, "POST", "/api/v1/bookings/"+bookingID+"/cancel", map[string]any{"expected_refund_minor": 500000, "reason": "Plans changed"})
+	buyer.expect(200, "POST", "/api/v1/bookings/"+bookingID+"/cancel", map[string]any{"expected_refund_minor": 1000000, "reason": "Plans changed"})
 	if got := scalar[string](t, `SELECT state||'/'||cancelled_by_role FROM bookings WHERE id=$1`, bookingID); got != "cancelled/buyer" {
 		t.Fatalf("booking %s", got)
 	}
@@ -120,7 +106,7 @@ func TestBuyerCancellationRefundsPerPolicy(t *testing.T) {
 	buyer.expect(409, "POST", "/api/v1/bookings/"+bookingID+"/cancel", map[string]any{"expected_refund_minor": 0})
 
 	refundID := scalar[string](t, `SELECT id::text FROM refunds WHERE booking_id=$1`, bookingID)
-	if got := scalar[string](t, `SELECT state||':'||platform_share_minor||':'||seller_share_minor FROM refunds WHERE id=$1`, refundID); got != "queued:25000:475000" {
+	if got := scalar[string](t, `SELECT state||':'||platform_share_minor||':'||seller_share_minor FROM refunds WHERE id=$1`, refundID); got != "queued:50000:950000" {
 		t.Fatalf("refund %s", got)
 	}
 	// Kora accepts it as processing, then reports it done.
@@ -133,18 +119,18 @@ func TestBuyerCancellationRefundsPerPolicy(t *testing.T) {
 	providerRef := scalar[string](t, `SELECT provider_refund_id FROM refunds WHERE id=$1`, refundID)
 	fake.mu.Lock()
 	rf := fake.refunds[providerRef]
-	if rf == nil || rf.payment != reference || rf.amount != 500000 {
+	if rf == nil || rf.payment != reference || rf.amount != 1000000 {
 		t.Fatalf("unexpected Kora refund %s %+v", providerRef, rf)
 	}
 	rf.status = "success"
 	fake.mu.Unlock()
-	if res := sendKoraWebhook(t, h, "refund.success", map[string]any{"reference": providerRef, "status": "success", "amount": 5000, "currency": "NGN"}); res.Status != 200 {
+	if res := sendKoraWebhook(t, h, "refund.success", map[string]any{"reference": providerRef, "status": "success", "amount": 10000, "currency": "NGN"}); res.Status != 200 {
 		t.Fatalf("refund webhook %d %s", res.Status, res.Body)
 	}
 	if err := h.api.processRefunds(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if got := scalar[string](t, `SELECT r.state||'/'||b.payment_state FROM refunds r JOIN bookings b ON b.id=r.booking_id WHERE r.id=$1`, refundID); got != "processed/partially_refunded" {
+	if got := scalar[string](t, `SELECT r.state||'/'||b.payment_state FROM refunds r JOIN bookings b ON b.id=r.booking_id WHERE r.id=$1`, refundID); got != "processed/refunded" {
 		t.Fatalf("after processing: %s", got)
 	}
 	if !journalBalanced(t, "refund", refundID) {
@@ -162,8 +148,8 @@ func TestBuyerCancellationRefundsPerPolicy(t *testing.T) {
 	if err := h.api.processPayouts(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if got := scalar[string](t, `SELECT state||'/'||amount_minor FROM seller_payouts WHERE booking_id=$1`, bookingID); got != "paid/475000" {
-		t.Fatalf("payout %s", got)
+	if got := scalar[string](t, `SELECT state||'/'||amount_minor FROM seller_payouts WHERE booking_id=$1`, bookingID); got != "cancelled/0" {
+		t.Fatalf("a full refund leaves nothing to pay out: %s", got)
 	}
 	all := h.deliverDue("")
 	var msgs, sellerMsgs []emailMessage
@@ -175,11 +161,11 @@ func TestBuyerCancellationRefundsPerPolicy(t *testing.T) {
 		}
 	}
 	cancelled := findMessage(t, msgs, "You cancelled your booking")
-	if !strings.Contains(cancelled.Text, "Your refund: ₦5,000") || len(cancelled.Attachments) != 1 || !strings.Contains(string(cancelled.Attachments[0].Content), "METHOD:CANCEL") {
+	if !strings.Contains(cancelled.Text, "Your refund: ₦10,000") || len(cancelled.Attachments) != 1 || !strings.Contains(string(cancelled.Attachments[0].Content), "METHOD:CANCEL") {
 		t.Fatalf("cancellation email:\n%s", cancelled.Text)
 	}
-	findMessage(t, msgs, "Your refund of ₦5,000 is on its way")
-	if msg := findMessage(t, sellerMsgs, "cancelled your booking"); !strings.Contains(msg.Text, "You keep ₦4,750") {
+	findMessage(t, msgs, "Your refund of ₦10,000 is on its way")
+	if msg := findMessage(t, sellerMsgs, "cancelled your booking"); strings.Contains(msg.Text, "You keep") {
 		t.Fatalf("seller cancellation email:\n%s", msg.Text)
 	}
 }

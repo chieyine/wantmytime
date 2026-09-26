@@ -125,10 +125,6 @@ func (a *API) createQuote(w http.ResponseWriter, r *http.Request) {
 		problem(w, 409, "SELLER_UNAVAILABLE", "This link is not ready to take bookings.")
 		return
 	}
-	if mode == "offer" {
-		problem(w, 409, "OFFER_MODE_ONLY", "This link takes offers instead of fixed-price bookings. Send an offer to continue.")
-		return
-	}
 	if !a.localPaymentSimulatorEnabled() && !a.checkoutReadyFor(currency) {
 		problem(w, 409, "CURRENCY_NOT_READY", "Payments for this link are not switched on yet. Check back soon.")
 		return
@@ -444,10 +440,6 @@ func (a *API) getQuote(w http.ResponseWriter, r *http.Request) {
 		}
 		state = "expired"
 	}
-	var policyKey string
-	if err = tx.QueryRow(r.Context(), `SELECT sp.cancellation_policy FROM quotes q JOIN seller_profiles sp ON sp.id=q.seller_id WHERE q.id=$1`, id).Scan(&policyKey); err != nil {
-		policyKey = "flexible"
-	}
 	err = tx.QueryRow(r.Context(), `SELECT id::text,payment_state FROM bookings WHERE quote_id=$1`, id).Scan(&bookingID, &bookingPaymentState)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		problem(w, 503, "DATABASE_ERROR", "The quote could not be loaded.")
@@ -460,7 +452,7 @@ func (a *API) getQuote(w http.ResponseWriter, r *http.Request) {
 	currency = strings.TrimSpace(currency)
 	jsonOut(w, 200, map[string]any{"id": id, "state": state, "gross_minor": strconv.FormatInt(amount, 10), "currency": currency, "seller_country": strings.TrimSpace(sellerCountry), "duration_minutes": duration, "starts_at": starts, "expires_at": expires, "seller": handle, "seller_name": sellerName, "offer_id": offerID,
 		"transfer_fee_minor": a.transferFeeEstimate(r.Context(), currency, amount), "method_fees": a.methodFees(r.Context(), currency, amount), "booking_id": bookingID, "booking_payment_state": bookingPaymentState,
-		"local_simulator": a.localPaymentSimulatorEnabled(), "provider_checkout_enabled": a.checkoutReadyFor(currency), "cancellation_policy": policyOrDefault(policyKey),
+		"local_simulator": a.localPaymentSimulatorEnabled(), "provider_checkout_enabled": a.checkoutReadyFor(currency), "cancellation_policy": cancellationRule,
 		"payment_methods": paymentMethodsFor(currency), "problem_window_minutes": int(disputeWindow() / time.Minute)})
 }
 

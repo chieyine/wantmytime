@@ -41,6 +41,9 @@ type Person struct {
 	Currency         string `json:"currency,omitempty"`
 	LocalSimulator   bool   `json:"local_simulator,omitempty"`
 	ProviderCheckout bool   `json:"provider_checkout_enabled,omitempty"`
+	// NextHandleChange is when the seller may change their link again; empty
+	// when they can change it now. Only the seller's own view carries it.
+	NextHandleChange *time.Time `json:"next_handle_change_at,omitempty"`
 }
 
 // reserved are words used by the site itself (keep in step with apps/web/src/lib/handle.ts).
@@ -97,8 +100,8 @@ func (a *API) availability(w http.ResponseWriter, r *http.Request) {
 func (a *API) publicPerson(w http.ResponseWriter, r *http.Request) {
 	h := normalizeHandle(r.PathValue("handle"))
 	var p Person
-	var sellerID, policy string
-	e := a.db.QueryRow(r.Context(), `SELECT sp.handle,u.display_name,COALESCE(sp.identity_url,''),sp.mode,COALESCE(pv.base_30_minor,0),COALESCE(pv.durations,ARRAY[15,30,60]),sp.paused,(sp.readiness_state='ready'),sp.timezone,sp.avatar_version,sp.public_version,sp.id::text,sp.cancellation_policy,sp.country::text,sp.currency::text FROM seller_profiles sp JOIN users u ON u.id=sp.user_id LEFT JOIN LATERAL (SELECT base_30_minor,durations FROM pricing_versions WHERE seller_id=sp.id ORDER BY created_at DESC LIMIT 1) pv ON true WHERE sp.handle=$1 AND sp.publication_state='published'`, h).Scan(&p.Handle, &p.Name, &p.IdentityURL, &p.Mode, &p.Base30, &p.Durations, &p.Paused, &p.Ready, &p.Timezone, &p.AvatarVersion, &p.PublicVersion, &sellerID, &policy, &p.Country, &p.Currency)
+	var sellerID string
+	e := a.db.QueryRow(r.Context(), `SELECT sp.handle,u.display_name,COALESCE(sp.identity_url,''),sp.mode,COALESCE(pv.base_30_minor,0),COALESCE(pv.durations,ARRAY[15,30,60]),sp.paused,(sp.readiness_state='ready'),sp.timezone,sp.avatar_version,sp.public_version,sp.id::text,sp.country::text,sp.currency::text FROM seller_profiles sp JOIN users u ON u.id=sp.user_id LEFT JOIN LATERAL (SELECT base_30_minor,durations FROM pricing_versions WHERE seller_id=sp.id ORDER BY created_at DESC LIMIT 1) pv ON true WHERE sp.handle=$1 AND sp.publication_state='published'`, h).Scan(&p.Handle, &p.Name, &p.IdentityURL, &p.Mode, &p.Base30, &p.Durations, &p.Paused, &p.Ready, &p.Timezone, &p.AvatarVersion, &p.PublicVersion, &sellerID, &p.Country, &p.Currency)
 	if errors.Is(e, pgx.ErrNoRows) {
 		if moved := a.movedHandle(r, h); moved != "" {
 			http.Redirect(w, r, "/api/v1/people/"+moved, http.StatusPermanentRedirect)
@@ -129,7 +132,7 @@ func (a *API) publicPerson(w http.ResponseWriter, r *http.Request) {
 		CancellationPolicy cancellationPolicy `json:"cancellation_policy"`
 		Rating             reviewSummary      `json:"rating"`
 		PaymentMethods     []string           `json:"payment_methods"`
-	}{p, policyOrDefault(policy), rating, paymentMethodsFor(p.Currency)})
+	}{p, cancellationRule, rating, paymentMethodsFor(p.Currency)})
 }
 
 func (a *API) publicAvatar(w http.ResponseWriter, r *http.Request) {
@@ -298,14 +301,12 @@ func validatePerson(p *Person) error {
 	if !validHandle(p.Handle) || !validName(p.Name) {
 		return fmt.Errorf("choose a valid link and display name")
 	}
-	if p.Mode != "fixed" && p.Mode != "offer" && p.Mode != "both" {
-		return fmt.Errorf("choose fixed price, offers, or both")
+	// Every link has a price; "both" also takes offers.
+	if p.Mode != "fixed" && p.Mode != "both" {
+		return fmt.Errorf("choose a fixed price, with or without offers")
 	}
-	if p.Mode != "offer" && (p.Base30 < 100 || p.Base30 > 100000000) {
+	if p.Base30 < 100 || p.Base30 > 100000000 {
 		return fmt.Errorf("enter a supported 30 minute price")
-	}
-	if p.Mode == "offer" {
-		p.Base30 = 0
 	}
 	if len(p.Durations) == 0 {
 		p.Durations = []int{15, 30, 60}
@@ -457,7 +458,9 @@ func (a *API) getOwnProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var p Person
-	e := a.db.QueryRow(r.Context(), `SELECT sp.handle,u.display_name,COALESCE(sp.identity_url,''),sp.mode,COALESCE(pv.base_30_minor,0),COALESCE(pv.durations,ARRAY[15,30,60]),sp.paused,(sp.readiness_state='ready'),sp.timezone,sp.avatar_version,sp.public_version,sp.country::text,sp.currency::text FROM seller_profiles sp JOIN users u ON u.id=sp.user_id LEFT JOIN LATERAL (SELECT base_30_minor,durations FROM pricing_versions WHERE seller_id=sp.id ORDER BY created_at DESC LIMIT 1) pv ON true WHERE sp.user_id=$1`, u.ID).Scan(&p.Handle, &p.Name, &p.IdentityURL, &p.Mode, &p.Base30, &p.Durations, &p.Paused, &p.Ready, &p.Timezone, &p.AvatarVersion, &p.PublicVersion, &p.Country, &p.Currency)
+	e := a.db.QueryRow(r.Context(), `SELECT sp.handle,u.display_name,COALESCE(sp.identity_url,''),sp.mode,COALESCE(pv.base_30_minor,0),COALESCE(pv.durations,ARRAY[15,30,60]),sp.paused,(sp.readiness_state='ready'),sp.timezone,sp.avatar_version,sp.public_version,sp.country::text,sp.currency::text,
+		CASE WHEN sp.handle_changed_at+`+handleChangeWait+`>now() THEN sp.handle_changed_at+`+handleChangeWait+` END
+		FROM seller_profiles sp JOIN users u ON u.id=sp.user_id LEFT JOIN LATERAL (SELECT base_30_minor,durations FROM pricing_versions WHERE seller_id=sp.id ORDER BY created_at DESC LIMIT 1) pv ON true WHERE sp.user_id=$1`, u.ID).Scan(&p.Handle, &p.Name, &p.IdentityURL, &p.Mode, &p.Base30, &p.Durations, &p.Paused, &p.Ready, &p.Timezone, &p.AvatarVersion, &p.PublicVersion, &p.Country, &p.Currency, &p.NextHandleChange)
 	if errors.Is(e, pgx.ErrNoRows) {
 		problem(w, 404, "PROFILE_NOT_FOUND", "You have not claimed a link yet.")
 		return
@@ -541,9 +544,19 @@ func (a *API) movedHandle(r *http.Request, h string) string {
 	return current
 }
 
-// handleChangesPerMonth limits how often a link can change, so shared links
-// don't churn and nobody can sweep up names by cycling through them.
-const handleChangesPerMonth = 3
+// handleChangeWait is how long a seller waits between link changes, so shared
+// links don't churn and nobody can sweep up names by cycling through them.
+// The link chosen when signing up doesn't count as a change.
+const handleChangeWait = `interval '6 months'`
+
+// linkChangeWaitMessage tells a seller when they can change their link again.
+func linkChangeWaitMessage(next time.Time, zone string) string {
+	loc, err := time.LoadLocation(zone)
+	if err != nil {
+		loc = time.UTC
+	}
+	return "You can change your link once every 6 months. You can change it again on " + next.In(loc).Format("2 January 2006") + ", and we’ll email you then."
+}
 
 // changeHandle moves a seller to a new link. The old one keeps forwarding and
 // stays theirs.
@@ -570,8 +583,9 @@ func (a *API) changeHandle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context())
-	var sellerID, current string
-	err = tx.QueryRow(r.Context(), `SELECT id::text,handle FROM seller_profiles WHERE user_id=$1 AND publication_state='published' FOR UPDATE`, u.ID).Scan(&sellerID, &current)
+	var sellerID, current, zone string
+	var nextChange *time.Time
+	err = tx.QueryRow(r.Context(), `SELECT id::text,handle,timezone,CASE WHEN handle_changed_at+`+handleChangeWait+`>now() THEN handle_changed_at+`+handleChangeWait+` END FROM seller_profiles WHERE user_id=$1 AND publication_state='published' FOR UPDATE`, u.ID).Scan(&sellerID, &current, &zone, &nextChange)
 	if errors.Is(err, pgx.ErrNoRows) {
 		problem(w, 404, "PROFILE_NOT_FOUND", "Your link was not found.")
 		return
@@ -584,13 +598,8 @@ func (a *API) changeHandle(w http.ResponseWriter, r *http.Request) {
 		jsonOut(w, 200, map[string]any{"handle": current})
 		return
 	}
-	var recent int
-	if err = tx.QueryRow(r.Context(), `SELECT count(*) FROM audit_events WHERE target_id=$1 AND action='seller.handle_changed' AND created_at>now()-interval '30 days'`, sellerID).Scan(&recent); err != nil {
-		problem(w, 503, "DATABASE_ERROR", "Your link could not be changed.")
-		return
-	}
-	if recent >= handleChangesPerMonth {
-		problem(w, 429, "HANDLE_CHANGE_LIMIT", "You can change your link up to 3 times in 30 days. Try again later.")
+	if nextChange != nil {
+		problem(w, 429, "HANDLE_CHANGE_LIMIT", linkChangeWaitMessage(*nextChange, zone))
 		return
 	}
 	var taken bool
@@ -611,7 +620,8 @@ func (a *API) changeHandle(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "DATABASE_ERROR", "Your link could not be changed.")
 		return
 	}
-	_, err = tx.Exec(r.Context(), `UPDATE seller_profiles SET handle=$2,public_version=public_version+1 WHERE id=$1`, sellerID, next)
+	var canChangeAgain time.Time
+	err = tx.QueryRow(r.Context(), `UPDATE seller_profiles SET handle=$2,public_version=public_version+1,handle_changed_at=now(),handle_reminder_due=now()+`+handleChangeWait+` WHERE id=$1 RETURNING handle_reminder_due`, sellerID, next).Scan(&canChangeAgain)
 	if pgErrCode(err) == "23505" {
 		problem(w, 409, "HANDLE_TAKEN", "That link is already taken. Try another.")
 		return
@@ -628,5 +638,5 @@ func (a *API) changeHandle(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "DATABASE_ERROR", "Your link could not be changed.")
 		return
 	}
-	jsonOut(w, 200, map[string]any{"handle": next, "previous": current})
+	jsonOut(w, 200, map[string]any{"handle": next, "previous": current, "next_handle_change_at": canChangeAgain})
 }

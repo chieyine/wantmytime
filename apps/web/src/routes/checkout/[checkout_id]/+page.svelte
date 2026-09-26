@@ -315,7 +315,6 @@
 			{/if}
 
 			{#if quote.cancellation_policy}<p class="form-note">
-					<strong>{quote.cancellation_policy.name} cancellation.</strong>
 					{quote.cancellation_policy.summary} If the seller cancels, you get a full refund.
 				</p>{/if}
 			<p class="form-note">

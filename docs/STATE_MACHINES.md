@@ -28,7 +28,7 @@ This file summarizes code currently present in the Go API and PostgreSQL migrati
 - Meeting-link reminders and booking email jobs are persisted in the notification outbox and retried when an email transport is configured.
 - A reschedule proposal leaves the original slot active. The other participant's acceptance revalidates availability and atomically moves the reservation, retaining price and duration and writing history.
 - Cancelling: either participant can cancel an upcoming confirmed booking straight away (`confirmed → cancelled`).
-  - The seller's cancellation policy (flexible, moderate or strict) is frozen onto the booking when it is made, and decides the buyer's refund. A buyer who cancels within an hour of booking, for a time at least a day away, gets a full refund.
+  - One rule for every booking: a buyer who cancels at least 24 hours before the start gets a full refund (not the payment fee); after that, nothing.
   - A seller cancellation always refunds in full.
   - The confirm step must match the refund amount the person was shown, so a refund that drops in between is never a surprise.
   - Cancelling releases the time, cancels pending emails and reschedule requests, removes the calendar event, and emails both people with a calendar cancellation.

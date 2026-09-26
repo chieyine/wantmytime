@@ -1,9 +1,10 @@
 <script lang="ts">
+	import { siteOrigin } from '$lib/site';
 	import { linkLabel } from '$lib/handle';
 	import { onMount } from 'svelte';
-	import { env } from '$env/dynamic/public';
 	import { formatMoney } from '$lib/money';
 	import PushToggle from '$lib/components/PushToggle.svelte';
+	import NewsPrompt from '$lib/components/NewsPrompt.svelte';
 	import { refreshPush } from '$lib/push';
 	let { data } = $props();
 	let account = $derived(data.account as { name: string; email: string; handle: string });
@@ -19,11 +20,7 @@
 	let onTheWay = $derived(o?.onTheWay ?? null);
 	let currency = $derived(o?.currency ?? 'NGN');
 	let overviewError = $derived(o?.failed ?? false);
-	let link = $derived(
-		account.handle
-			? `${(env.PUBLIC_APP_ORIGIN || (typeof window === 'undefined' ? '' : window.location.origin)).replace(/\/$/, '')}/${account.handle}`
-			: 'No link claimed yet'
-	);
+	let link = $derived(account.handle ? `${siteOrigin()}/${account.handle}` : 'No link claimed yet');
 	let nextBooking = $derived(
 		bookings
 			.filter(
@@ -52,10 +49,10 @@
 			: windowCount === 0
 				? '/app/availability'
 				: hasBank === false
-					? '/app/settings/payouts'
+					? '/app/money/payouts'
 					: profilePaused
 						? '/app/link'
-						: '/app/share'
+						: ''
 	);
 	let nextSetupLabel = $derived(
 		!account.handle
@@ -73,6 +70,18 @@
 	});
 	const dateLabel = (value: string) =>
 		new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+	// Share where the phone offers it (WhatsApp, Instagram…), otherwise copy.
+	async function share() {
+		if (typeof navigator.share === 'function') {
+			try {
+				await navigator.share({ title: `Book time with ${account.name}`, url: link });
+				return;
+			} catch (error) {
+				if (error instanceof DOMException && error.name === 'AbortError') return;
+			}
+		}
+		await copy();
+	}
 	async function copy() {
 		copyError = '';
 		try {
@@ -85,13 +94,13 @@
 	}
 </script>
 
-<svelte:head><title>Your WantMyTime — Overview</title></svelte:head>
+<svelte:head><title>Your WantMyTime — Home</title></svelte:head>
 
 <section class="workspace-overview">
 	<header class="workspace-overview-head">
-		<p class="workspace-kicker">OVERVIEW <span>01 / 08</span></p>
+		<p class="workspace-kicker">HOME</p>
 		<h1>YOUR TIME,<br /><em>{account.name?.trim().split(' ')[0] || 'YOUR SPACE'}.</em></h1>
-		<p>Your link, your hours, your bookings and your money, all in one place.</p>
+		<p>Share your link. We’ll handle the booking and the payment.</p>
 	</header>
 	<section class="workspace-link-panel" aria-labelledby="workspace-link-title">
 		<div>
@@ -101,6 +110,8 @@
 		<div class="workspace-link-actions">
 			{#if account.handle}<button type="button" class="workspace-action" onclick={copy}
 					>{copied ? 'COPIED' : 'COPY LINK'} <span aria-hidden="true">↗</span></button
+				><button type="button" class="workspace-action workspace-action-outline" onclick={share}
+					>SHARE <span aria-hidden="true">↗</span></button
 				><a class="workspace-action workspace-action-outline" href={`/${account.handle}`}
 					>VIEW PAGE <span aria-hidden="true">↗</span></a
 				>{:else}<a class="workspace-action" href="/claim">CLAIM YOUR LINK <span aria-hidden="true">↗</span></a>{/if}
@@ -140,7 +151,11 @@
 						<span>04</span><span>Bookings are on hold on our side <b>Contact us</b></span>
 					</li>{/if}
 			</ol>
-			<a href={nextSetupHref}>{nextSetupLabel} <span aria-hidden="true">↗</span></a>
+			{#if nextSetupHref}<a href={nextSetupHref}>{nextSetupLabel} <span aria-hidden="true">↗</span></a>{:else}<button
+					type="button"
+					class="workspace-readiness-action"
+					onclick={share}>{copied ? 'LINK COPIED' : nextSetupLabel} <span aria-hidden="true">↗</span></button
+				>{/if}
 		</section>
 		<aside class="workspace-side-note">
 			<p class="workspace-kicker">UP NEXT <span>03</span></p>
@@ -148,8 +163,8 @@
 				><span>NEXT BOOKING</span><strong
 					>{nextBooking ? `${nextBooking.buyer} · ${dateLabel(nextBooking.starts_at)}` : 'Nothing booked yet'}</strong
 				><b aria-hidden="true">↗</b></a
-			><a href={nextOffer ? `/app/offers/${encodeURIComponent(nextOffer.id)}` : '/app/offers'}
-				><span>OFFERS TO ANSWER</span><strong
+			><a href={nextOffer ? `/app/offers/${encodeURIComponent(nextOffer.id)}` : '/app/bookings'}
+				><span>REQUESTS TO ANSWER</span><strong
 					>{nextOffer
 						? `${nextOffer.buyer_name} · ${formatMoney(Number(nextOffer.amount_minor), nextOffer.currency)}`
 						: 'No offers waiting'}</strong
@@ -162,4 +177,5 @@
 		</aside>
 	</div>
 	{#if account.handle}<div class="workspace-push"><PushToggle audience="seller" hideWhenOn /></div>{/if}
+	{#if account.handle}<NewsPrompt />{/if}
 </section>

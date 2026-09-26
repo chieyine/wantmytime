@@ -78,7 +78,7 @@
 					handle: string;
 					name: string;
 					identity_url: string;
-					mode: 'fixed' | 'offer' | 'both';
+					mode: 'fixed' | 'both';
 					base_30_minor: number;
 					durations: number[];
 					timezone: string;
@@ -99,7 +99,7 @@
 				if (typeof draft.marketing === 'boolean')
 					await saveMarketingChoice(draft.marketing, 'seller_signup').catch(() => undefined);
 				sessionStorage.removeItem('aside_claim_draft');
-				window.location.href = '/app/onboarding';
+				window.location.href = '/app';
 			} else {
 				const target = next ? new URL(next, window.location.origin) : new URL('/app', window.location.origin);
 				window.location.href =

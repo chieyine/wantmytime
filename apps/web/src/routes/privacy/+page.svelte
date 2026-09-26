@@ -24,8 +24,8 @@
 	<ul>
 		<li><b>Your account:</b> your email address and name, and the sign-in sessions you open.</li>
 		<li>
-			<b>If you take bookings:</b> your link, photo, profile link, prices, available hours, cancellation policy and bank account
-			for payouts. We store the full account number encrypted and show only its last four digits.
+			<b>If you take bookings:</b> your link, photo, profile link, prices, available hours and bank account for payouts. We
+			store the full account number encrypted and show only its last four digits.
 		</li>
 		<li>
 			<b>Bookings and offers:</b> who booked whom, when, for how long and for how much; meeting links; reported problems,
@@ -138,7 +138,7 @@
 	<ul>
 		<li>
 			<b>Download your data</b> or <b>delete your account</b> from
-			<a class="text-link" href="/app/settings/data">Settings → Your data</a>.
+			<a class="text-link" href="/app/settings/data">Settings → Delete your account</a>.
 		</li>
 		<li>Correct your name, link details and hours from your workspace.</li>
 		<li>

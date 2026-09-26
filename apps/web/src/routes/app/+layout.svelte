@@ -5,21 +5,19 @@
 	let { data, children } = $props();
 	let account = $derived(data.account as { name: string; email: string; handle: string });
 	let signOutError = $state('');
+	// Five places, no more. Settings sits behind the account initial.
 	const navigation = [
-		{ href: '/app', label: 'Overview', number: '01' },
-		{ href: '/app/bookings', label: 'Bookings', number: '02' },
-		{ href: '/app/offers', label: 'Offers', number: '03' },
-		{ href: '/app/link', label: 'Your link', number: '04' },
-		{ href: '/app/availability', label: 'Availability', number: '05' },
-		{ href: '/app/money', label: 'Money', number: '06' },
-		{ href: '/app/share', label: 'Share', number: '07' },
-		{ href: '/app/settings', label: 'Settings', number: '08' }
+		{ href: '/app', label: 'Home', number: '01', also: [] as string[] },
+		{ href: '/app/bookings', label: 'Bookings', number: '02', also: ['/app/offers'] },
+		{ href: '/app/link', label: 'Your page', number: '03', also: [] },
+		{ href: '/app/availability', label: 'Hours', number: '04', also: [] },
+		{ href: '/app/money', label: 'Money', number: '05', also: [] }
 	];
-	function current(href: string) {
-		return href === '/app'
-			? page.url.pathname === href
-			: page.url.pathname === href || page.url.pathname.startsWith(`${href}/`);
+	const under = (href: string) => page.url.pathname === href || page.url.pathname.startsWith(`${href}/`);
+	function current(item: { href: string; also: string[] }) {
+		return item.href === '/app' ? page.url.pathname === '/app' : [item.href, ...item.also].some(under);
 	}
+	let inSettings = $derived(under('/app/settings'));
 	async function signOut() {
 		signOutError = '';
 		try {
@@ -38,26 +36,33 @@
 		</div>
 		<nav aria-label="Workspace">
 			{#each navigation as item (item.href)}
-				<a href={item.href} class:active={current(item.href)} aria-current={current(item.href) ? 'page' : undefined}
+				<a href={item.href} class:active={current(item)} aria-current={current(item) ? 'page' : undefined}
 					><small>{item.number}</small><span>{item.label}</span><span aria-hidden="true">↗</span></a
 				>
 			{/each}
 		</nav>
 		<div class="workspace-rail-foot">
-			<span>ACCOUNT</span><strong>{account.name}</strong><small>{account.email}</small><button
-				type="button"
-				onclick={signOut}>SIGN OUT <span aria-hidden="true">↗</span></button
-			>{#if signOutError}<p role="alert">{signOutError}</p>{/if}
+			<span>ACCOUNT</span><strong>{account.name}</strong><small>{account.email}</small><a
+				href="/app/settings"
+				class:active={inSettings}
+				aria-current={inSettings ? 'page' : undefined}>SETTINGS <span aria-hidden="true">↗</span></a
+			><button type="button" onclick={signOut}>SIGN OUT <span aria-hidden="true">↗</span></button>{#if signOutError}<p
+					role="alert"
+				>
+					{signOutError}
+				</p>{/if}
 		</div>
 	</aside>
 	<div class="workspace-main">
 		<header class="workspace-topbar">
 			<span>WANTMYTIME / YOUR WORKSPACE</span>
 			<div>
-				{#if account.handle}<a href={`/${account.handle}`}>VIEW PUBLIC PAGE <span aria-hidden="true">↗</span></a
-					>{/if}<button class="workspace-mobile-signout" type="button" onclick={signOut}>SIGN OUT</button><span
+				{#if account.handle}<a href={`/${account.handle}`}>VIEW PUBLIC PAGE <span aria-hidden="true">↗</span></a>{/if}<a
 					class="workspace-account-mark"
-					aria-label={account.name}>{account.name?.slice(0, 1).toUpperCase() || 'A'}</span
+					class:active={inSettings}
+					href="/app/settings"
+					aria-label="Settings"
+					title="Settings">{account.name?.slice(0, 1).toUpperCase() || 'A'}</a
 				>
 			</div>
 		</header>
@@ -65,8 +70,8 @@
 		<nav class="workspace-mobile-nav" aria-label="Workspace sections">
 			{#each navigation as item (item.href)}<a
 					href={item.href}
-					class:active={current(item.href)}
-					aria-current={current(item.href) ? 'page' : undefined}>{item.label}</a
+					class:active={current(item)}
+					aria-current={current(item) ? 'page' : undefined}>{item.label}</a
 				>{/each}
 		</nav>
 		<div class="workspace-body" id="workspace-content" tabindex="-1">{@render children()}</div>

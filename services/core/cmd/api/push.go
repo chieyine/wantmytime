@@ -28,7 +28,11 @@ func (a *API) pushConfig(w http.ResponseWriter, r *http.Request) {
 
 type pushSubscriptionInput struct {
 	Endpoint string `json:"endpoint"`
-	Keys     struct {
+	// Browsers include expirationTime in PushSubscription.toJSON(); it is
+	// accepted (the strict decoder would otherwise reject the whole body) and
+	// ignored, since a subscription that stops working is dropped on failure.
+	ExpirationTime *float64 `json:"expirationTime"`
+	Keys           struct {
 		P256dh string `json:"p256dh"`
 		Auth   string `json:"auth"`
 	} `json:"keys"`

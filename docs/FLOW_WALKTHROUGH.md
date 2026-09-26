@@ -17,8 +17,8 @@ Conventions: amounts are minor units in the seller's currency; "hold" is a `slot
 3. Submit: `GET /api/v1/handles/{handle}/availability` (taken or held for 180 days after a deletion → "That link is taken"), then `POST /api/v1/auth/challenges {purpose: claim}` → 8-digit code emailed (5 per email per hour).
 4. The draft (including country and browser timezone) waits in `sessionStorage`; `/verify` takes the code. Typing the 8th digit submits.
 5. `POST /api/v1/auth/challenges/{id}/verify` → account created or found, email marked verified, 30-day session cookie; the browser timezone is saved for emails.
-6. `POST /api/v1/me/link` → `seller_profiles` (published, `readiness_state='incomplete'`, `country`, `currency`), first `pricing_versions` row in that currency → `/app/onboarding`.
-7. The link is suggested from the seller's name at sign-up. Later, `PUT /api/v1/me/link/handle` changes it (up to 3 times in 30 days). The old link keeps forwarding (`GET /api/v1/people/{old}` answers 308, the page answers 301) and stays reserved for that seller; deleting the account puts every old link on hold.
+6. `POST /api/v1/me/link` → `seller_profiles` (published, `readiness_state='incomplete'`, `country`, `currency`), first `pricing_versions` row in that currency → `/app` (Home, with the setup checklist).
+7. The link is suggested from the seller's name at sign-up. Later, `PUT /api/v1/me/link/handle` changes it, once every 6 months; the seller gets an email when they can change it again. The old link keeps forwarding (`GET /api/v1/people/{old}` answers 308, the page answers 301) and stays reserved for that seller; deleting the account puts every old link on hold.
 
 Edge cases: code expired or wrong 5 times → "invalid or expired", ask again. Handle taken between the check and the save → 409 "already claimed". Country not switched on → 422. **Fixed:** the seller's country and currency are now chosen here (they were hard-wired to Nigeria/NGN).
 
@@ -31,7 +31,7 @@ Changing the timezone on Your link also moves the weekly hours to it, so slots n
 
 ### S3. Add a payout account (this opens bookings)
 
-1. `/app/settings/payouts` loads the seller's country: `GET /api/v1/me/payout-account` and `GET /api/v1/payout-banks`.
+1. `/app/money/payouts` loads the seller's country: `GET /api/v1/me/payout-account` and `GET /api/v1/payout-banks`.
 2. **Nigeria:** choose a bank, type the 10-digit number → `POST /api/v1/me/payout-account/resolve` shows the account holder's name from the bank (20 checks an hour). **Fixed:** the name check sent Kora the country code (`NG`) where it expects the currency (`NGN`), so it would have failed for everyone.
 3. **Ghana and Kenya:** bank account or mobile money ( network + wallet number, stored as `233…`/`254…`); the seller types the name on the account because Kora can't confirm it there.
 4. Save → `PUT /api/v1/me/payout-account`: number encrypted (AES-GCM, bound to the seller), only the last four digits readable; `readiness_state` becomes `ready` unless an operator has put the seller on hold. The overview now says "You're open for bookings".
@@ -39,7 +39,7 @@ Changing the timezone on Your link also moves the weekly hours to it, so slots n
 
 ### S4. Share
 
-`/app/share`: copy link, system share sheet, a ready-made reply ("Happy to help. I take calls through my link: …"). The public page shows the price in the seller's currency, how buyers pay, the cancellation policy and reviews. Link previews (OpenGraph image) show the price in the seller's currency.
+Home (`/app`): copy link and the system share sheet. The public page shows the price in the seller's currency, how buyers pay, the cancellation rule (the same for every seller) and reviews. Link previews (OpenGraph image) show the price in the seller's currency.
 
 ### S5. A booking comes in
 
@@ -73,7 +73,7 @@ Either person picks a new free time (`POST /api/v1/bookings/{id}/reschedules`, c
 
 ### S10. Offers (sellers in "let people make an offer" or "both" mode)
 
-Under Your link a seller picks one of three modes: a fixed price (`fixed`), offers only (`offer`), or both (`both`). With `both`, the public page leads with the price and "Pick a time", and adds "Make an offer" underneath; fixed-price quotes and offers are both accepted.
+Every link has a price (`fixed`). Under Your page a seller can also let people offer a different price (`both`). With `both`, the public page leads with the price and "Pick a time", and adds "Make an offer" underneath; fixed-price quotes and offers are both accepted.
 
 
 1. Offer arrives → email "New offer from {buyer}: {amount} for {length}".

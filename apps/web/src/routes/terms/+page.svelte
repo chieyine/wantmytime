@@ -55,18 +55,15 @@
 	<h2>6. Cancellations and refunds</h2>
 	<ul>
 		<li>
-			Each seller chooses a cancellation policy (flexible, moderate or strict). The policy in force when a booking is
-			made applies to it and is shown before payment.
+			Every booking uses the same cancellation rule: a buyer who cancels at least 24 hours before the start gets a full
+			refund; after that, no refund. The rule is shown before payment.
 		</li>
-		<li>
-			A buyer who cancels gets back what that policy allows; the payment fee is not returned. Any buyer who cancels
-			within an hour of booking, for a time at least a day away, gets a full refund.
-		</li>
+		<li>A buyer who cancels gets back what that rule allows; the payment fee is not returned.</li>
 		<li>
 			If the seller cancels, or a report that the seller did not join stands, the buyer gets everything back, including
 			the payment fee, and the seller is not paid for that booking.
 		</li>
-		<li>A buyer can ask the seller for a full refund outside the policy. The seller decides.</li>
+		<li>A buyer can ask the seller for a full refund outside this rule. The seller decides.</li>
 		<li>Refunds go back to the account the buyer paid from. Banks can take up to 10 working days to show them.</li>
 	</ul>
 

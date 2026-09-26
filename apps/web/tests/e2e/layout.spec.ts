@@ -2,15 +2,14 @@ import { expect, test } from '@playwright/test';
 import { newPerson, openEveryDay, setMode, signUpSeller } from './helpers';
 
 // Guards the responsive work: no page may scroll sideways, on phone or desktop.
-const publicPages = ['/', '/pricing', '/claim', '/login', '/help', '/terms', '/privacy'];
+const publicPages = ['/', '/claim', '/login', '/help', '/terms', '/privacy'];
 const workspacePages = [
 	'/app',
 	'/app/bookings',
-	'/app/offers',
 	'/app/link',
 	'/app/availability',
 	'/app/money',
-	'/app/share',
+	'/app/money/payouts',
 	'/app/settings'
 ];
 

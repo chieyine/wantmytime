@@ -149,8 +149,6 @@ func (a *API) routes() http.Handler {
 	handle("POST /api/v1/bookings/{id}/review", a.createReview)
 	handle("POST /api/v1/reviews/{id}/reply", a.replyToReview)
 	handle("GET /api/v1/people/{handle}/reviews", a.rateLimited(publicLimit, a.publicReviews))
-	handle("GET /api/v1/me/cancellation-policy", a.getCancellationPolicy)
-	handle("PUT /api/v1/me/cancellation-policy", a.setCancellationPolicy)
 	handle("GET /api/v1/me/refund-recoveries", a.myRecoveries)
 	handle("GET /api/v1/ops/refunds", a.opsRefunds)
 	handle("POST /api/v1/ops/refunds/{id}/approve", a.opsRefundAction("approve"))

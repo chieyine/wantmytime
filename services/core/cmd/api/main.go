@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -132,6 +133,11 @@ func main() {
 	}
 	defer reporter.Close(5 * time.Second)
 	a := &API{db: db, env: env, sessionKey: []byte(sessionSecret), logger: logger, reporter: reporter, metrics: observe.NewMetrics()}
+	// End-to-end tests sign many people up from one address; a local API may
+	// raise its rate limits for them. Ignored everywhere else.
+	if scale, scaleErr := strconv.Atoi(os.Getenv("LOCAL_RATE_LIMIT_SCALE")); env == "local" && scaleErr == nil && scale > 1 && scale <= 100 {
+		a.rateLimitScale = scale
+	}
 	if a.media, err = newObjectStoreFromEnv(env); err != nil {
 		log.Fatal(err)
 	}

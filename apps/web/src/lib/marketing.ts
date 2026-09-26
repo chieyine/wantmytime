@@ -2,7 +2,7 @@ import { api } from '$lib/api';
 
 export { marketingWording } from './marketing-wording';
 
-export type MarketingSource = 'seller_signup' | 'booking' | 'offer' | 'settings';
+export type MarketingSource = 'seller_signup' | 'booking' | 'offer' | 'settings' | 'dashboard';
 
 /** Saves the choice for whoever is signed in (a seller, or a buyer's booking session). */
 export async function saveMarketingChoice(subscribed: boolean, source: MarketingSource) {

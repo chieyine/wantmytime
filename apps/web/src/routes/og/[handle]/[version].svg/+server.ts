@@ -1,3 +1,4 @@
+import { configuredSiteOrigin } from '$lib/site';
 import { error, redirect } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
@@ -29,11 +30,10 @@ export const GET: RequestHandler = async ({ params, fetch }) => {
 		);
 	const name = esc(person.name);
 	const publicHandle = esc(person.handle);
-	const siteHost = esc(new URL(env.PUBLIC_APP_ORIGIN || 'https://wantmytime.com').host);
-	const price =
-		person.mode !== 'offer' && !person.paused
-			? formatMoney(Math.round(Number(person.base_30_minor) / 100) * 100, person.currency || 'NGN')
-			: '';
+	const siteHost = esc(new URL(configuredSiteOrigin()).host);
+	const price = !person.paused
+		? formatMoney(Math.round(Number(person.base_30_minor) / 100) * 100, person.currency || 'NGN')
+		: '';
 	const detail = price ? `${esc(price)} / 30 minutes` : 'BOOK TIME ON YOUR TERMS';
 	const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630"><rect width="1200" height="630" fill="#f2f0e9"/><path d="M72 82H1128M72 546H1128" stroke="#171817" stroke-width="2"/><text x="72" y="122" font-family="Arial,sans-serif" font-size="22" font-weight="700" letter-spacing="3" fill="#171817">WANTMYTIME® / PERSONAL BOOKING</text><text x="72" y="280" font-family="Arial,sans-serif" font-size="82" font-weight="800" letter-spacing="-5" fill="#171817">A CONVERSATION</text><text x="72" y="370" font-family="Baskerville,Georgia,serif" font-size="96" fill="#171817">with ${name}</text><text x="72" y="462" font-family="Arial,sans-serif" font-size="34" fill="#171817">${detail}</text><text x="72" y="585" font-family="Arial,sans-serif" font-size="23" letter-spacing="2" fill="#555a53">${siteHost}/${publicHandle}</text><circle cx="1035" cy="442" r="28" fill="none" stroke="#b43a30" stroke-width="8"/><line x1="1035" y1="442" x2="1035" y2="425" stroke="#171817" stroke-width="3"/><line x1="1035" y1="442" x2="1049" y2="449" stroke="#171817" stroke-width="3"/></svg>`;
 	return new Response(svg, {

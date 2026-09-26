@@ -48,7 +48,8 @@
 	let windows = $state<WindowRule[]>(initial.windows);
 	let starterHours = $state(initial.starter);
 	let overrides = $state(initial.overrides);
-	let selectedDay = $state(1);
+	// Hours a day had before it was switched off, so switching it back on restores them.
+	let rememberedHours: Record<number, WindowRule[]> = {};
 	let overrideDate = $state('');
 	let timezone = $state(initial.timezone);
 	let notice = $state(initial.notice);
@@ -61,38 +62,92 @@
 	let overrideMessage = $state('');
 	let savedFingerprint = $state(initial.fingerprint);
 	let saveState = $state<'idle' | 'saved' | 'error'>('idle');
-	let selectedName = $derived(days.find((day) => day.value === selectedDay)?.name || 'Day');
-	let selectedWindows = $derived(windows.filter((window) => window.weekday === selectedDay));
+	let openDays = $derived(days.filter((day) => windows.some((window) => window.weekday === day.value)));
 	let invalidWindow = $derived(windows.some((window) => !window.start || !window.end || window.start >= window.end));
 	let fingerprint = $derived(
 		JSON.stringify({ windows, timezone, notice: Number(notice), horizon: Number(horizon), buffer: Number(buffer) })
 	);
 	let dirty = $derived(loaded && fingerprint !== savedFingerprint);
 
-	function rangeStyle(window: WindowRule) {
-		const [startHour, startMinute] = window.start.split(':').map(Number);
-		const [endHour, endMinute] = window.end.split(':').map(Number);
-		const start = Math.max(0, Math.min(1440, startHour * 60 + startMinute));
-		const end = Math.max(start, Math.min(1440, endHour * 60 + endMinute));
-		return `left:${(start / 1440) * 100}%;width:${((end - start) / 1440) * 100}%`;
+	const asMinutes = (time: string) => {
+		const [hour, minute] = time.split(':').map(Number);
+		return hour * 60 + minute;
+	};
+	const asTime = (minutes: number) =>
+		`${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+	const sorted = (list: WindowRule[]) => list.sort((a, b) => a.weekday - b.weekday || a.start.localeCompare(b.start));
+	function hoursFor(weekday: number) {
+		return windows.filter((window) => window.weekday === weekday);
 	}
-
-	function addWindow() {
-		const latestEnd = Math.max(
-			0,
-			...selectedWindows.map((window) => {
-				const [hour, minute] = window.end.split(':').map(Number);
-				return hour * 60 + minute;
-			})
-		);
-		if (latestEnd >= 23 * 60) return;
-		const startMinutes = latestEnd ? latestEnd + 15 : 10 * 60;
-		const endMinutes = Math.min(startMinutes + (latestEnd ? 60 : 360), 23 * 60 + 45);
-		const asTime = (minutes: number) =>
-			`${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
-		const next = { weekday: selectedDay, start: asTime(startMinutes), end: asTime(endMinutes) };
-		windows = [...windows, next].sort((a, b) => a.weekday - b.weekday || a.start.localeCompare(b.start));
+	// Hours to offer when a day is switched on: what it had before, else the first open day's.
+	function defaultHours(weekday: number): WindowRule[] {
+		if (rememberedHours[weekday]?.length) return rememberedHours[weekday];
+		const model = openDays.length ? hoursFor(openDays[0].value) : [{ weekday, start: '09:00', end: '17:00' }];
+		return model.map((window) => ({ weekday, start: window.start, end: window.end }));
+	}
+	function toggleDay(weekday: number, open: boolean) {
+		if (open) {
+			windows = sorted([...windows, ...defaultHours(weekday)]);
+		} else {
+			rememberedHours[weekday] = hoursFor(weekday).map((window) => ({ ...window }));
+			windows = windows.filter((window) => window.weekday !== weekday);
+		}
 		saveState = 'idle';
+	}
+	function addWindow(weekday: number) {
+		const latestEnd = Math.max(0, ...hoursFor(weekday).map((window) => asMinutes(window.end)));
+		if (latestEnd >= 23 * 60) return;
+		const startMinutes = latestEnd ? latestEnd + 15 : 9 * 60;
+		const endMinutes = Math.min(startMinutes + (latestEnd ? 60 : 480), 23 * 60 + 45);
+		windows = sorted([...windows, { weekday, start: asTime(startMinutes), end: asTime(endMinutes) }]);
+		saveState = 'idle';
+	}
+	// Gives every open day the same hours as the given day.
+	function copyToAll(weekday: number) {
+		const model = hoursFor(weekday);
+		windows = sorted(
+			openDays.flatMap((day) => model.map((window) => ({ weekday: day.value, start: window.start, end: window.end })))
+		);
+		saveState = 'idle';
+	}
+	function withCurrent(options: [number, string][], current: number, unit: string) {
+		return options.some(([value]) => value === Number(current))
+			? options
+			: [...options, [Number(current), `${current} ${unit}`] as [number, string]].sort((a, b) => a[0] - b[0]);
+	}
+	const noticeOptions: [number, string][] = [
+		[0, 'No notice needed'],
+		[30, '30 minutes before'],
+		[60, '1 hour before'],
+		[120, '2 hours before'],
+		[240, '4 hours before'],
+		[720, '12 hours before'],
+		[1440, '1 day before'],
+		[2880, '2 days before'],
+		[10080, '1 week before']
+	];
+	const horizonOptions: [number, string][] = [
+		[7, 'Up to 1 week ahead'],
+		[14, 'Up to 2 weeks ahead'],
+		[30, 'Up to 30 days ahead'],
+		[60, 'Up to 60 days ahead'],
+		[90, 'Up to 90 days ahead'],
+		[180, 'Up to 6 months ahead'],
+		[365, 'Up to a year ahead']
+	];
+	const bufferOptions: [number, string][] = [
+		[0, 'No break'],
+		[5, '5 minutes'],
+		[10, '10 minutes'],
+		[15, '15 minutes'],
+		[30, '30 minutes'],
+		[60, '1 hour']
+	];
+	function prettyDate(date: string) {
+		const parsed = new Date(`${date}T12:00:00`);
+		return Number.isNaN(parsed.getTime())
+			? date
+			: parsed.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 	}
 	function removeWindow(index: number) {
 		windows = windows.filter((_, position) => position !== index);
@@ -136,7 +191,7 @@
 				...overrides.filter((item) => item.date !== overrideDate),
 				{ date: overrideDate, closed: true }
 			].sort((a, b) => a.date.localeCompare(b.date));
-			overrideMessage = `${overrideDate} is closed.`;
+			overrideMessage = `${prettyDate(overrideDate)} is now a day off.`;
 			overrideDate = '';
 		} catch (error) {
 			overrideMessage = error instanceof Error ? error.message : 'Date override could not be saved.';
@@ -150,7 +205,7 @@
 		try {
 			await api(`/api/v1/me/availability/overrides/${date}`, { method: 'DELETE' });
 			overrides = overrides.filter((item) => item.date !== date);
-			overrideMessage = `Weekly hours restored for ${date}.`;
+			overrideMessage = `${prettyDate(date)} is back to your usual hours.`;
 		} catch (error) {
 			overrideMessage = error instanceof Error ? error.message : 'Date override could not be removed.';
 		} finally {
@@ -161,10 +216,10 @@
 
 <svelte:head><title>Availability — WantMyTime</title></svelte:head>
 <section class="form-page app-page workspace-availability">
-	<a class="back-link" href="/app">← Overview</a>
-	<p class="eyebrow">Availability / your hours</p>
-	<h1 class="page-heading">MAKE TIME<br />ON YOUR TERMS.</h1>
-	<p class="page-intro">Set the hours people can book each week. Close a single date whenever you need to.</p>
+	<a class="back-link" href="/app">← Home</a>
+	<p class="eyebrow">Availability</p>
+	<h1 class="page-heading">YOUR HOURS.</h1>
+	<p class="page-intro">Tick the days you work and set the hours people can book.</p>
 	{#if starterHours}<div class="notice notice-info">
 			We’ve filled in weekdays, 9am to 5pm, to get you started. Change anything you like, then save.
 		</div>{/if}
@@ -177,116 +232,86 @@
 				save();
 			}}
 		>
-			<div class="availability-editor-head">
-				<div>
-					<p class="workspace-kicker">01 / WEEKLY RHYTHM</p>
-					<h2>Your week, at a glance.</h2>
-				</div>
-				<label
-					>TIMEZONE<select class="field" bind:value={timezone}
-						>{#each timezoneOptions(timezone) as zone (zone)}<option value={zone}>{zone}</option>{/each}</select
-					></label
-				>
-			</div>
-			<div class="availability-week" role="group" aria-label="Choose a day to edit">
+			<div class="hours-list" role="group" aria-label="Weekly hours">
 				{#each days as day (day.value)}
-					{@const dayWindows = windows.filter((window) => window.weekday === day.value)}
-					<button
-						type="button"
-						class:active={selectedDay === day.value}
-						aria-pressed={selectedDay === day.value}
-						onclick={() => (selectedDay = day.value)}
-						><span>{day.short}</span><strong
-							>{dayWindows.length
-								? `${dayWindows.length} ${dayWindows.length === 1 ? 'window' : 'windows'}`
-								: 'Closed'}</strong
-						><span class="availability-week-track" aria-hidden="true"
-							>{#each dayWindows as window, i (i)}<i style={rangeStyle(window)}></i>{/each}</span
-						></button
-					>
+					{@const dayHours = hoursFor(day.value)}
+					<div class="hours-day" class:closed={!dayHours.length}>
+						<label class="hours-toggle"
+							><input
+								type="checkbox"
+								checked={dayHours.length > 0}
+								onchange={(event) => toggleDay(day.value, event.currentTarget.checked)}
+							/><span>{day.name}</span></label
+						>
+						{#if dayHours.length}
+							<div class="hours-times">
+								{#each windows as window, index (index)}{#if window.weekday === day.value}<div class="hours-window">
+											<input
+												class="field"
+												type="time"
+												step="900"
+												bind:value={window.start}
+												required
+												aria-label={`${day.name} from`}
+											/><span aria-hidden="true">–</span><input
+												class="field"
+												type="time"
+												step="900"
+												bind:value={window.end}
+												required
+												aria-label={`${day.name} until`}
+											/><button
+												type="button"
+												class="hours-icon"
+												onclick={() => removeWindow(index)}
+												aria-label={`Remove ${day.name} hours ${window.start} to ${window.end}`}>×</button
+											>
+										</div>{/if}{/each}
+								<div class="hours-actions">
+									<button
+										type="button"
+										onclick={() => addWindow(day.value)}
+										disabled={dayHours.some((window) => window.end >= '23:00')}>+ Add hours</button
+									>{#if openDays.length > 1 && openDays[0].value === day.value}<button
+											type="button"
+											onclick={() => copyToAll(day.value)}>Copy to every open day</button
+										>{/if}
+								</div>
+							</div>
+						{:else}<p class="hours-closed">Not available</p>{/if}
+					</div>
 				{/each}
 			</div>
-			<div class="availability-day">
-				<div class="availability-day-head">
-					<div>
-						<p class="workspace-kicker">EDIT SELECTED DAY</p>
-						<h3>{selectedName}</h3>
-					</div>
-					<span
-						>{selectedWindows.length
-							? `${selectedWindows.length} ${selectedWindows.length === 1 ? 'WINDOW' : 'WINDOWS'}`
-							: 'NO HOURS'}</span
+			<label class="hours-timezone"
+				><span>Times are in</span><select class="field" bind:value={timezone}
+					>{#each timezoneOptions(timezone) as zone (zone)}<option value={zone}>{zone}</option>{/each}</select
+				></label
+			>
+			<p class="hours-note">People booking from elsewhere see these times in their own timezone.</p>
+			<details class="hours-more">
+				<summary>More options <small>notice, how far ahead, breaks between bookings</small></summary>
+				<div class="hours-limits">
+					<label
+						>How soon can people book?<select class="field" bind:value={notice}
+							>{#each withCurrent(noticeOptions, notice, 'minutes before') as [value, label] (value)}<option {value}
+									>{label}</option
+								>{/each}</select
+						></label
+					><label
+						>How far ahead?<select class="field" bind:value={horizon}
+							>{#each withCurrent(horizonOptions, horizon, 'days ahead') as [value, label] (value)}<option {value}
+									>{label}</option
+								>{/each}</select
+						></label
+					><label
+						>Break after each booking<select class="field" bind:value={buffer}
+							>{#each withCurrent(bufferOptions, buffer, 'minutes') as [value, label] (value)}<option {value}
+									>{label}</option
+								>{/each}</select
+						></label
 					>
 				</div>
-				{#if !selectedWindows.length}<p class="availability-day-empty">
-						This day is closed. Add hours to make it available.
-					</p>{/if}
-				{#each windows as window, index (index)}{#if window.weekday === selectedDay}<div class="availability-window">
-							<label>FROM<input class="field" type="time" step="900" bind:value={window.start} required /></label><span
-								aria-hidden="true">→</span
-							><label>UNTIL<input class="field" type="time" step="900" bind:value={window.end} required /></label
-							><button
-								type="button"
-								onclick={() => removeWindow(index)}
-								aria-label={`Remove ${selectedName} hours ${window.start} to ${window.end}`}>REMOVE</button
-							>
-						</div>{/if}{/each}
-				<button
-					class="availability-add-window"
-					type="button"
-					onclick={addWindow}
-					disabled={selectedWindows.some((window) => window.end >= '23:00')}
-					>+ ADD HOURS TO {selectedName.toUpperCase()}</button
-				>
-			</div>
-			<div class="availability-bottom-grid">
-				<section>
-					<p class="workspace-kicker">02 / BOOKING LIMITS</p>
-					<h2>Leave room around it.</h2>
-					<div class="availability-limits">
-						<label
-							>MINIMUM NOTICE <span>MINUTES</span><input
-								class="field"
-								type="number"
-								min="0"
-								max="10080"
-								bind:value={notice}
-								required
-							/></label
-						><label
-							>BOOKING HORIZON <span>DAYS</span><input
-								class="field"
-								type="number"
-								min="1"
-								max="365"
-								bind:value={horizon}
-								required
-							/></label
-						><label
-							>BUFFER AFTER A MEETING <span>MINUTES</span><input
-								class="field"
-								type="number"
-								min="0"
-								max="240"
-								bind:value={buffer}
-								required
-							/></label
-						>
-					</div>
-				</section>
-				<aside>
-					<p class="workspace-kicker">YOUR LOCAL VIEW</p>
-					<p>
-						Your weekly hours are in <strong>{timezone}</strong>. People booking from anywhere see the same times
-						converted to their own timezone.
-					</p>
-					<div class="availability-day-track" aria-hidden="true">
-						<span>00:00</span><span>12:00</span><span>24:00</span>{#each selectedWindows as window, i (i)}<i
-								style={rangeStyle(window)}
-							></i>{/each}
-					</div>
-				</aside>
-			</div>
+			</details>
 			<div class="availability-save-bar">
 				<div>
 					<span class:dirty class:saved={saveState === 'saved' && !dirty} class="availability-save-dot"></span><strong
@@ -297,14 +322,14 @@
 								: saveState === 'saved'
 									? 'HOURS SAVED'
 									: 'ALL CHANGES SAVED'}</strong
-					><small>Existing confirmed bookings stay in place when you edit these hours.</small>
+					><small>Bookings you already have stay in place.</small>
 				</div>
 				<button class="button" type="submit" disabled={saving || !dirty || invalidWindow}
-					>{saving ? 'SAVING…' : 'SAVE WEEKLY HOURS'} <span aria-hidden="true">↗</span></button
+					>{saving ? 'SAVING…' : 'SAVE HOURS'} <span aria-hidden="true">↗</span></button
 				>
 			</div>
 			{#if invalidWindow}<p class="notice notice-warning" role="alert">
-					Each window needs an end time after its start time.
+					Each set of hours needs an end time after its start time.
 				</p>{/if}
 			{#if message && (!dirty || saveState === 'error')}<p
 					class:notice-warning={saveState === 'error'}
@@ -317,29 +342,25 @@
 		</form>
 		<section class="availability-overrides">
 			<div>
-				<p class="workspace-kicker">03 / DATE EXCEPTIONS</p>
-				<h2>Close a particular day.</h2>
-				<p>Your weekly rhythm stays saved. Closing a date changes only that day.</p>
+				<h2>Days off</h2>
+				<p>Away on a particular date? Close it here. Your weekly hours stay as they are.</p>
 			</div>
 			<div>
-				<label>DATE TO CLOSE<input class="field" type="date" bind:value={overrideDate} /></label><button
+				<label>Date<input class="field" type="date" bind:value={overrideDate} /></label><button
 					class="button button-secondary"
 					type="button"
 					onclick={closeDate}
-					disabled={!overrideDate || overrideBusy}>CLOSE DATE ↗</button
+					disabled={!overrideDate || overrideBusy}>TAKE THE DAY OFF</button
 				>{#if overrideMessage}<p class="notice notice-info" aria-live="polite">
 						{overrideMessage}
 					</p>{/if}{#each overrides as item (item.date)}<div class="availability-override-row">
-						<span>{item.date}</span><strong>CLOSED</strong><button
+						<span>{prettyDate(item.date)}</span><strong>DAY OFF</strong><button
 							type="button"
 							onclick={() => removeOverride(item.date)}
-							disabled={overrideBusy}>RESTORE HOURS ↗</button
+							disabled={overrideBusy}>Undo</button
 						>
 					</div>{/each}
 			</div>
 		</section>
-		<div class="notice notice-warning">
-			People can book any free slot inside these hours, minus your notice and buffer times.
-		</div>
 	{/if}
 </section>

@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { formatMoney, priceForDuration, paymentMethodsSentence } from '$lib/money';
-	import TimeDial from '$lib/components/TimeDial.svelte';
 	import { onMount } from 'svelte';
 	type Profile = {
 		handle: string;
@@ -13,12 +12,12 @@
 		durations: number[];
 		paused: boolean;
 		ready: boolean;
-		mode: 'fixed' | 'offer' | 'both';
+		mode: 'fixed' | 'both';
 		currency?: string;
 		payment_methods?: string[];
 		local_simulator?: boolean;
 		provider_checkout_enabled?: boolean;
-		cancellation_policy?: { key: string; name: string; summary: string };
+		cancellation_policy?: { name: string; summary: string };
 		rating?: { average: number; count: number };
 	};
 	type Review = {
@@ -46,108 +45,143 @@
 			/* reviews are optional on this page */
 		}
 	});
+	let firstName = $derived(person.name.trim().split(/\s+/)[0] || person.name);
+	let initials = $derived(
+		person.name
+			.trim()
+			.split(/\s+/)
+			.slice(0, 2)
+			.map((part: string) => part.slice(0, 1).toUpperCase())
+			.join('')
+	);
+	// The seller's own clock, so a buyer elsewhere knows whether it is morning or night there.
+	let now = $state(new Date());
+	onMount(() => {
+		const timer = setInterval(() => (now = new Date()), 30_000);
+		return () => clearInterval(timer);
+	});
+	let theirTime = $derived.by(() => {
+		try {
+			return new Intl.DateTimeFormat(undefined, {
+				hour: 'numeric',
+				minute: '2-digit',
+				timeZone: person.timezone || 'UTC'
+			}).format(now);
+		} catch {
+			return '';
+		}
+	});
+	let place = $derived((person.timezone || 'UTC').split('/').pop()?.replace(/_/g, ' ') ?? 'UTC');
 	const reviewDate = (value: string) =>
 		new Intl.DateTimeFormat(undefined, { month: 'short', year: 'numeric' }).format(new Date(value));
 </script>
 
-<section class="person-page">
-	<div class="person-topline">
-		<a href="/" class="person-brand">WANTMYTIME®</a><span>PERSONAL BOOKING / {person.handle || 'PREVIEW'}</span>
-	</div>
-	{#if preview}<p class="person-preview">Private preview. Save your changes to update your page.</p>{/if}
-	<div class="person-grid">
-		<header class="person-identity">
-			<p class="person-kicker">BOOK TIME WITH</p>
-			<div class="person-avatar">
-				{#if person.avatar_url}<img src={person.avatar_url} alt="" />{:else}<span
-						>{person.name.slice(0, 1).toUpperCase()}</span
-					>{/if}
+<section class="pp">
+	<header class="pp-top">
+		<a href="/" class="wordmark pp-brand">WantMyTime<span class="wordmark-period">.</span></a>
+		{#if !preview}<a class="pp-own" href="/claim">Get your own link <span aria-hidden="true">↗</span></a>{/if}
+	</header>
+	{#if preview}<p class="pp-preview">Private preview. Save your changes to update your page.</p>{/if}
+	<div class="pp-grid">
+		<div class="pp-profile">
+			<div class="pp-avatar">
+				{#if person.avatar_url}<img src={person.avatar_url} alt="" />{:else}<span>{initials}</span>{/if}
 			</div>
+			<p class="pp-kicker">Book time with</p>
 			<h1>{person.name}</h1>
 			{#if person.rating?.count}<a
-					class="person-rating"
+					class="pp-rating"
 					href="#reviews"
 					aria-label={`Rated ${person.rating.average} out of 5 from ${person.rating.count} reviews`}
-					>★ {person.rating.average.toFixed(1)}
-					<span>· {person.rating.count} review{person.rating.count === 1 ? '' : 's'}</span></a
+					><span aria-hidden="true">★</span>
+					{person.rating.average.toFixed(1)}
+					<small>· {person.rating.count} review{person.rating.count === 1 ? '' : 's'}</small></a
 				>{/if}
-			<p class="person-handle">wantmytime.com/{person.handle || 'yourname'}</p>
-			{#if person.identity_url}<a
-					class="person-identity-link"
-					href={person.identity_url}
-					target="_blank"
-					rel="noopener noreferrer">{person.identity_label || 'View profile'} <span aria-hidden="true">↗</span></a
-				>{/if}
-			<div class="person-dial"><TimeDial {duration} compact /></div>
-		</header>
-		<div class="person-action">
-			<div class="person-action-head"><span>BOOKING / 01</span><span>{person.timezone || 'UTC'}</span></div>
-			<h2>{person.mode === 'offer' ? 'MAKE AN OFFER.' : 'FIND A TIME.'}</h2>
-			{#if person.local_simulator && !preview}<p class="person-status">
+			<ul class="pp-facts">
+				{#if theirTime}<li>
+						<span>Local time</span><strong>{theirTime} in {place}</strong>
+					</li>{/if}
+
+				{#if person.identity_url}<li>
+						<span>Find them at</span><a href={person.identity_url} target="_blank" rel="noopener noreferrer"
+							>{person.identity_label || 'View profile'} <span aria-hidden="true">↗</span></a
+						>
+					</li>{/if}
+			</ul>
+			<ol class="pp-steps" aria-label="How booking works">
+				<li><b>1</b>Choose how long</li>
+				<li><b>2</b>Pick a free time</li>
+				<li><b>3</b>Pay, and it’s booked</li>
+			</ol>
+		</div>
+		<div class="pp-card">
+			{#if person.local_simulator && !preview}<p class="pp-status">
 					Development preview · no money will be collected.
 				</p>{/if}
-			{#if person.paused}<p class="person-unavailable">{person.name} isn’t taking bookings right now.</p>
-			{:else if !person.ready}<p class="person-unavailable">Bookings open soon. Check back in a little while.</p>
-			{:else}<fieldset class="person-duration">
-					<legend>HOW LONG?</legend>
-					<div class="person-duration-options">
+			<h2>Book a call with {firstName}</h2>
+			{#if person.paused}<p class="pp-unavailable">{person.name} isn’t taking bookings right now.</p>
+			{:else if !person.ready}<p class="pp-unavailable">Bookings open soon. Check back in a little while.</p>
+			{:else}<fieldset class="pp-lengths">
+					<legend>How long?</legend>
+					<div class="pp-length-options" style={`--count:${Math.min(person.durations.length, 3)}`}>
 						{#each person.durations as d (d)}<button
 								type="button"
 								class:active={duration === d}
 								aria-pressed={duration === d}
-								onclick={() => (duration = d)}><strong>{d}</strong><span>MINUTES</span></button
+								onclick={() => (duration = d)}
+								><strong>{d} min</strong><span
+									>{formatMoney(priceForDuration(person.base_30_minor, d), person.currency)}</span
+								></button
 							>{/each}
 					</div>
 				</fieldset>
-				{#if person.mode !== 'offer'}<div class="person-price">
-						<span>YOU PAY</span><strong>{formatMoney(amount, person.currency)}</strong>
-					</div>
-					{#if preview}<button class="person-cta" disabled>PICK A TIME</button>{:else}<a
-							class="person-cta"
-							href={`/book/new?seller=${encodeURIComponent(person.handle)}&duration=${duration}`}
-							>PICK A TIME <span aria-hidden="true">↗</span></a
-						>{/if}
-					<p class="person-fineprint">
-						{paymentMethodsSentence(person.payment_methods)} The booking is yours the moment the payment arrives.{#if person.cancellation_policy}{` ${person.cancellation_policy.name} cancellation: ${person.cancellation_policy.summary}`}{/if}
-					</p>
-					{#if person.mode === 'both'}<div class="person-offer-alt">
-							<p>
-								Want to suggest a different price? {person.name} can accept, counter or say no. You only pay if you both agree.
-							</p>
-							{#if preview}<button class="person-cta-secondary" disabled>MAKE AN OFFER</button>{:else}<a
-									class="person-cta-secondary"
-									href={`/offer/new?seller=${encodeURIComponent(person.handle)}&duration=${duration}`}
-									>MAKE AN OFFER <span aria-hidden="true">↗</span></a
-								>{/if}
-						</div>{/if}
-				{:else}<p class="person-offer-copy">
-						Name your price for {duration} minutes. {person.name} can accept, counter or say no. You only pay if you both
-						agree.
-					</p>
-					{#if preview}<button class="person-cta" disabled>MAKE AN OFFER</button>{:else}<a
-							class="person-cta"
-							href={`/offer/new?seller=${encodeURIComponent(person.handle)}&duration=${duration}`}
-							>MAKE AN OFFER <span aria-hidden="true">↗</span></a
-						>{/if}{/if}
+				<div class="pp-total">
+					<span>{duration} minutes</span><strong>{formatMoney(amount, person.currency)}</strong>
+				</div>
+				{#if preview}<button class="pp-cta" disabled>Pick a time</button>{:else}<a
+						class="pp-cta"
+						href={`/book/new?seller=${encodeURIComponent(person.handle)}&duration=${duration}`}
+						>Pick a time <span aria-hidden="true">→</span></a
+					>{/if}
+				<ul class="pp-assurances">
+					<li>{paymentMethodsSentence(person.payment_methods)}</li>
+					<li>Confirmed the moment your payment arrives.</li>
+					{#if person.cancellation_policy}<li>
+							{person.cancellation_policy.summary}
+						</li>{/if}
+				</ul>
+				{#if person.mode === 'both'}<div class="pp-offer-alt">
+						<p>
+							<strong>Have a different price in mind?</strong> Suggest one. {firstName} can accept, counter or say no, and
+							you only pay if you both agree.
+						</p>
+						{#if preview}<button class="pp-cta-secondary" disabled>Make an offer</button>{:else}<a
+								class="pp-cta-secondary"
+								href={`/offer/new?seller=${encodeURIComponent(person.handle)}&duration=${duration}`}
+								>Make an offer <span aria-hidden="true">→</span></a
+							>{/if}
+					</div>{/if}
 			{/if}
 		</div>
 	</div>
 	{#if reviews.length}
-		<section class="person-reviews" id="reviews" aria-label="Reviews">
-			<h2>WHAT PEOPLE SAID</h2>
-			{#each reviews as review (review.id)}
-				<article>
-					<p class="review-stars" aria-label={`${review.rating} out of 5`}>
-						{'★'.repeat(review.rating)}{'☆'.repeat(5 - review.rating)}
-					</p>
-					{#if review.body}<p class="person-review-body">{review.body}</p>{/if}
-					<small>{review.reviewer} · {reviewDate(review.created_at)}</small>
-					{#if review.seller_reply}<p class="person-review-reply">
-							<strong>{person.name}:</strong>
-							{review.seller_reply}
-						</p>{/if}
-				</article>
-			{/each}
+		<section class="pp-reviews" id="reviews" aria-label="Reviews">
+			<h2>What people said</h2>
+			<div>
+				{#each reviews as review (review.id)}
+					<article>
+						<p class="review-stars" aria-label={`${review.rating} out of 5`}>
+							{'★'.repeat(review.rating)}{'☆'.repeat(5 - review.rating)}
+						</p>
+						{#if review.body}<p class="pp-review-body">{review.body}</p>{/if}
+						<small>{review.reviewer} · {reviewDate(review.created_at)}</small>
+					</article>
+				{/each}
+			</div>
 		</section>
 	{/if}
+	<footer class="pp-foot">
+		<span>wantmytime.com/{person.handle || 'yourname'}</span>
+		<span>Booked with WantMyTime</span>
+	</footer>
 </section>

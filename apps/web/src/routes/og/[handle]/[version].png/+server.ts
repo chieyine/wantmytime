@@ -1,3 +1,4 @@
+import { configuredSiteOrigin } from '$lib/site';
 import { Buffer } from 'node:buffer';
 import { deflateSync } from 'node:zlib';
 import { error, redirect } from '@sveltejs/kit';
@@ -147,14 +148,13 @@ export const GET: RequestHandler = async ({ params, fetch }) => {
 	draw(`WITH ${rasterName}`, 72, 335, 11, dark, 19);
 	let siteHost = 'wantmytime.com';
 	try {
-		siteHost = new URL(env.PUBLIC_APP_ORIGIN || 'https://wantmytime.com').host;
+		siteHost = new URL(configuredSiteOrigin()).host;
 	} catch {
 		// Keep the default host when the configured origin is malformed.
 	}
-	const price =
-		person.mode !== 'offer' && !person.paused
-			? `${(person.currency || 'NGN').replace(/[^A-Z]/g, '')} ${Math.round(Number(person.base_30_minor) / 100).toLocaleString('en-US')} / 30 MIN`
-			: 'BOOK TIME ON YOUR TERMS';
+	const price = !person.paused
+		? `${(person.currency || 'NGN').replace(/[^A-Z]/g, '')} ${Math.round(Number(person.base_30_minor) / 100).toLocaleString('en-US')} / 30 MIN`
+		: 'BOOK TIME ON YOUR TERMS';
 	draw(price, 72, 462, 5, red, 38);
 	draw(`${siteHost}/${person.handle}`, 72, 566, 4, muted, 36);
 	const ihdr = Buffer.alloc(13);

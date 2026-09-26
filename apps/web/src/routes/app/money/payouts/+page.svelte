@@ -126,7 +126,7 @@
 
 <svelte:head><title>Payouts — WantMyTime</title></svelte:head>
 <section class="form-page app-page">
-	<a class="back-link" href="/app/settings">← Settings</a>
+	<a class="back-link" href="/app/money">← Money</a>
 	<p class="eyebrow">Payouts</p>
 	<h1 class="page-heading">Where your money goes.</h1>
 	<p class="page-intro">

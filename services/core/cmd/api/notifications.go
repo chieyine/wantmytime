@@ -127,6 +127,9 @@ func enqueueCancellationReview(ctx context.Context, tx pgx.Tx, cancellationID st
 func (a *API) runNotificationWorker(ctx context.Context) {
 	for {
 		err := a.processNotificationBatch(ctx)
+		if reminderErr := a.sendLinkChangeReminders(ctx); err == nil {
+			err = reminderErr
+		}
 		if err != nil && !errors.Is(err, context.Canceled) {
 			a.log().ErrorContext(ctx, "notification worker batch failed", "error", err.Error())
 		}
@@ -263,7 +266,7 @@ func (a *API) bookingEmail(ctx context.Context, jobID string) (emailContent, str
 				c.Facts = append(c.Facts, emailFact{"Paid", paid})
 				c.Links = append(c.Links, emailLink{"Download your receipt", bookingURL + "/receipt"})
 			}
-			c.Facts = append(c.Facts, emailFact{"Cancellation", policyOrDefault(n.CancellationPolicy).Summary})
+			c.Facts = append(c.Facts, emailFact{"Cancellation", cancellationRule.Summary})
 			if !simulated {
 				c.Notes = append(c.Notes, "If something goes wrong, report it from your booking page by "+formatWhen(ends.Add(disputeWindow()), own)+".")
 			}
@@ -423,14 +426,14 @@ func (a *API) bookingEmail(ctx context.Context, jobID string) (emailContent, str
 				c.Notes = append(c.Notes, "We'll email you when the refund has been sent. Banks can take up to 10 working days to show it.")
 			}
 		case !n.RecipientIsSeller:
-			c.Facts = append(c.Facts, emailFact{"Refund", "None under the " + strings.ToLower(policyOrDefault(n.CancellationPolicy).Name) + " cancellation policy"})
+			c.Facts = append(c.Facts, emailFact{"Refund", "None: it was less than 24 hours before the start"})
 		case n.RefundSellerShareMinor > 0 && n.RefundSellerLiability == "receivable":
 			c.Facts = append(c.Facts, emailFact{"Refunded to the buyer", formatMoney(n.Currency, n.RefundMinor)})
 			c.Notes = append(c.Notes, "Your share of the payment ("+formatMoney(n.Currency, n.RefundSellerShareMinor)+") was already paid to you, so it will be taken from your next payouts, at most half of each one until it is repaid.")
 		case n.RefundSellerShareMinor > 0:
 			c.Facts = append(c.Facts, emailFact{"Refunded to the buyer", formatMoney(n.Currency, n.RefundMinor)})
 			if kept := n.SellerEntitlementMinor - n.RefundSellerShareMinor; kept > 0 {
-				c.Notes = append(c.Notes, "You keep "+formatMoney(n.Currency, kept)+" under your cancellation policy. It is paid out with your other payouts.")
+				c.Notes = append(c.Notes, "You keep "+formatMoney(n.Currency, kept)+" under the cancellation rule. It is paid out with your other payouts.")
 			} else {
 				c.Notes = append(c.Notes, "There is no payout for this booking.")
 			}
@@ -506,7 +509,7 @@ func (a *API) bookingEmail(ctx context.Context, jobID string) (emailContent, str
 			return c, "", "STALE"
 		}
 		booking := fmt.Sprintf("%d minutes with %s, %s", duration, n.BuyerName, short)
-		c.Action = &emailLink{"View payouts", appOrigin() + "/app/settings/payouts"}
+		c.Action = &emailLink{"View payouts", appOrigin() + "/app/money/payouts"}
 		if n.PayoutNetMinor > 0 {
 			c.Subject = formatMoney(n.Currency, n.PayoutNetMinor) + " is on its way to you"
 			c.Heading = "Your payout has been sent."
@@ -546,13 +549,13 @@ func (a *API) bookingEmail(ctx context.Context, jobID string) (emailContent, str
 		c.Heading = "Your payout didn't go through."
 		c.Paragraphs = []string{
 			"Your bank or wallet provider didn't accept the payment for this booking. We'll try again automatically over the next few days.",
-			"If your account details have changed or might be wrong, update them in Settings › Payouts and we'll send it again as soon as the new account is ready.",
+			"If your account details have changed or might be wrong, update them under Money and we'll send it again as soon as the new account is ready.",
 		}
 		c.Facts = append(baseFacts, emailFact{"Amount", formatMoney(n.Currency, amount)})
 		if n.PayoutBankName != "" {
 			c.Facts = append(c.Facts, emailFact{"Account", n.PayoutBankName + " ••" + n.PayoutAccountLast4})
 		}
-		c.Action = &emailLink{"Check your payout account", appOrigin() + "/app/settings/payouts"}
+		c.Action = &emailLink{"Check your payout account", appOrigin() + "/app/money/payouts"}
 	case "problem_resolved_buyer", "problem_resolved_seller":
 		if n.IssueResolution == "" {
 			return c, "", "STALE"

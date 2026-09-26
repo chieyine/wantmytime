@@ -32,7 +32,12 @@ export async function codeSentBy(email: string, action: () => Promise<unknown>):
 }
 
 /** Signs up through /claim and lands in the workspace. Returns the link it got. */
-export async function signUpSeller(page: Page, person: { name: string; email: string }, handle?: string) {
+export async function signUpSeller(
+	page: Page,
+	person: { name: string; email: string },
+	handle?: string,
+	options: { news?: boolean } = {}
+) {
 	await page.goto('/claim');
 	await page.getByLabel('Your name').fill(person.name);
 	const link = page.getByLabel('Your link');
@@ -40,11 +45,12 @@ export async function signUpSeller(page: Page, person: { name: string; email: st
 	await expect(page.locator('#claim-handle-note')).toContainText('is yours if you want it');
 	const chosen = await link.inputValue();
 	await page.getByLabel('Your email').fill(person.email);
+	if (options.news === false) await page.getByLabel(/Send me news/).uncheck();
 	const code = await codeSentBy(person.email, () => page.getByRole('button', { name: /Send my code/ }).click());
 	await expect(page).toHaveURL(/\/verify/);
 	// The page submits on its own once all eight digits are in.
 	await page.getByLabel('Your code').fill(code);
-	await expect(page).toHaveURL(/\/app\/onboarding/);
+	await expect(page).toHaveURL(/\/app$/);
 	return chosen;
 }
 
@@ -66,7 +72,7 @@ export async function openEveryDay(page: Page) {
 }
 
 /** Saves a link mode through the API, as the signed-in seller. */
-export async function setMode(page: Page, mode: 'fixed' | 'offer' | 'both') {
+export async function setMode(page: Page, mode: 'fixed' | 'both') {
 	const headers = { origin: new URL(page.url()).origin };
 	const link = await (await page.request.get('/api/v1/me/link')).json();
 	const response = await page.request.patch('/api/v1/me/link', { headers, data: { ...link, mode } });

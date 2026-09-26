@@ -18,7 +18,6 @@ type cancellationPreview struct {
 	Role          string     `json:"role"`
 	RefundMinor   int64      `json:"refund_minor"`
 	RefundPercent int64      `json:"refund_percent"`
-	Policy        string     `json:"policy"`
 	PolicyName    string     `json:"policy_name"`
 	PolicySummary string     `json:"policy_summary"`
 	RefundDropsAt *time.Time `json:"refund_drops_at,omitempty"`
@@ -28,8 +27,7 @@ type cancellationPreview struct {
 // previewCancellation works out what cancelling now would mean for the
 // person asking. Sellers always refund the buyer in full.
 func previewCancellation(b store.LockBookingForCancellationRow, userID string, now time.Time) cancellationPreview {
-	p := policyOrDefault(b.CancellationPolicy)
-	out := cancellationPreview{Policy: p.Key, PolicyName: p.Name, PolicySummary: p.Summary, Role: "buyer", Paid: b.PaymentState == "paid"}
+	out := cancellationPreview{PolicyName: cancellationRule.Name, PolicySummary: cancellationRule.Summary, Role: "buyer", Paid: b.PaymentState == "paid"}
 	if userID == b.SellerUserID {
 		out.Role = "seller"
 	}
@@ -45,8 +43,8 @@ func previewCancellation(b store.LockBookingForCancellationRow, userID string, n
 	if out.Role == "seller" {
 		out.RefundPercent = 100
 	} else {
-		out.RefundPercent = buyerRefundPercent(b.CancellationPolicy, b.CreatedAt, b.StartsAt, now)
-		if drop := nextRefundDrop(b.CancellationPolicy, b.CreatedAt, b.StartsAt, now); !drop.IsZero() {
+		out.RefundPercent = buyerRefundPercent(b.StartsAt, now)
+		if drop := nextRefundDrop(b.StartsAt, now); !drop.IsZero() {
 			out.RefundDropsAt = &drop
 		}
 	}
@@ -188,48 +186,4 @@ func (a *API) applyCancellation(ctx context.Context, tx pgx.Tx, b store.LockBook
 		}
 	}
 	return enqueueCalendarSync(ctx, tx, b.BookingID)
-}
-
-// setCancellationPolicy lets a seller choose the policy for future bookings.
-func (a *API) setCancellationPolicy(w http.ResponseWriter, r *http.Request) {
-	u, ok := a.requireUser(w, r)
-	if !ok {
-		return
-	}
-	var in struct {
-		Policy string `json:"policy"`
-	}
-	if decode(r, &in) != nil {
-		problem(w, 422, "INVALID_POLICY", "Choose a cancellation policy.")
-		return
-	}
-	p, known := cancellationPolicies[in.Policy]
-	if !known {
-		problem(w, 422, "INVALID_POLICY", "Choose flexible, moderate or strict.")
-		return
-	}
-	tag, err := a.db.Exec(r.Context(), `UPDATE seller_profiles SET cancellation_policy=$2 WHERE user_id=$1`, u.ID, p.Key)
-	if err != nil {
-		problem(w, 503, "DATABASE_ERROR", "The policy could not be saved.")
-		return
-	}
-	if tag.RowsAffected() != 1 {
-		problem(w, 409, "SELLER_REQUIRED", "Claim your link before choosing a policy.")
-		return
-	}
-	jsonOut(w, 200, p)
-}
-
-func (a *API) getCancellationPolicy(w http.ResponseWriter, r *http.Request) {
-	u, ok := a.requireUser(w, r)
-	if !ok {
-		return
-	}
-	var key string
-	if err := a.db.QueryRow(r.Context(), `SELECT cancellation_policy FROM seller_profiles WHERE user_id=$1`, u.ID).Scan(&key); err != nil {
-		problem(w, 404, "SELLER_REQUIRED", "Claim your link before choosing a policy.")
-		return
-	}
-	options := []cancellationPolicy{cancellationPolicies["flexible"], cancellationPolicies["moderate"], cancellationPolicies["strict"]}
-	jsonOut(w, 200, map[string]any{"policy": key, "options": options})
 }

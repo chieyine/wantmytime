@@ -56,37 +56,40 @@ type AvailabilityWindow struct {
 }
 
 type Booking struct {
-	ID                 string
-	QuoteID            *string
-	SellerID           string
-	BuyerUserID        string
-	BuyerName          string
-	GuestEmail         string
-	DurationMinutes    int32
-	StartsAt           time.Time
-	GrossMinor         int64
-	Currency           string
-	State              string
-	PaymentState       string
-	QuoteSnapshot      []byte
-	MeetingUrl         []byte
-	MeetingDeadline    time.Time
-	MeetingReadyAt     *time.Time
-	IssueReason        *string
-	IssueCreatedAt     *time.Time
-	IssueResolvedAt    *time.Time
-	BuyerCompletedAt   *time.Time
-	SellerCompletedAt  *time.Time
-	CreatedAt          time.Time
-	CalendarSequence   int32
-	CalendarEventID    *string
-	MeetingSource      *string
-	CancellationPolicy string
-	CancelledAt        *time.Time
-	CancelledByRole    *string
-	CancellationReason *string
-	IssueReportedBy    *string
-	IssueResolution    *string
+	ID                  string
+	QuoteID             *string
+	SellerID            string
+	BuyerUserID         string
+	BuyerName           string
+	GuestEmail          string
+	DurationMinutes     int32
+	StartsAt            time.Time
+	GrossMinor          int64
+	Currency            string
+	State               string
+	PaymentState        string
+	QuoteSnapshot       []byte
+	MeetingUrl          []byte
+	MeetingDeadline     time.Time
+	MeetingReadyAt      *time.Time
+	IssueReason         *string
+	IssueCreatedAt      *time.Time
+	IssueResolvedAt     *time.Time
+	BuyerCompletedAt    *time.Time
+	SellerCompletedAt   *time.Time
+	CreatedAt           time.Time
+	CalendarSequence    int32
+	CalendarEventID     *string
+	MeetingSource       *string
+	CancelledAt         *time.Time
+	CancelledByRole     *string
+	CancellationReason  *string
+	IssueReportedBy     *string
+	IssueResolution     *string
+	IssueRespondBy      *time.Time
+	IssueSellerResponse *string
+	IssueDisputedAt     *time.Time
+	IssueSellerNote     *string
 }
 
 type BookingCancellationRequest struct {
@@ -98,6 +101,29 @@ type BookingCancellationRequest struct {
 	Resolution      *string
 	CreatedAt       time.Time
 	ResolvedAt      *time.Time
+}
+
+type Broadcast struct {
+	ID          string
+	Subject     string
+	Heading     string
+	Body        string
+	ActionLabel *string
+	ActionUrl   *string
+	State       string
+	CreatedBy   string
+	CreatedAt   time.Time
+	QueuedAt    *time.Time
+	FinishedAt  *time.Time
+	ImageUrl    *string
+}
+
+type BroadcastDelivery struct {
+	BroadcastID string
+	Email       string
+	State       string
+	Attempts    int32
+	SentAt      *time.Time
 }
 
 type CalendarBusyBlock struct {
@@ -167,6 +193,12 @@ type HandleHold struct {
 	CreatedAt time.Time
 }
 
+type HandleRedirect struct {
+	OldHandle string
+	SellerID  string
+	CreatedAt time.Time
+}
+
 type IdempotencyRecord struct {
 	ID             string
 	ActorScope     string
@@ -205,6 +237,28 @@ type LedgerJournal struct {
 	CreatedAt     time.Time
 }
 
+type MarketingConsentEvent struct {
+	ID         string
+	Email      string
+	Subscribed bool
+	Source     string
+	Wording    string
+	CreatedAt  time.Time
+}
+
+type MarketingContact struct {
+	Email            string
+	UserID           *string
+	Subscribed       bool
+	Source           string
+	Wording          string
+	ConfirmedAt      *time.Time
+	UnsubscribeToken string
+	ConsentedAt      *time.Time
+	UnsubscribedAt   *time.Time
+	UpdatedAt        time.Time
+}
+
 type NoShowReport struct {
 	ID             string
 	BookingID      string
@@ -220,20 +274,22 @@ type NoShowReport struct {
 }
 
 type NotificationOutbox struct {
-	ID              string
-	EventKey        string
-	BookingID       *string
-	RecipientUserID string
-	Kind            string
-	DueAt           time.Time
-	State           string
-	Attempts        int16
-	ClaimedAt       *time.Time
-	SentAt          *time.Time
-	LastErrorCode   *string
-	CreatedAt       time.Time
-	OfferID         *string
-	ReferenceID     *string
+	ID                 string
+	EventKey           string
+	BookingID          *string
+	RecipientUserID    string
+	Kind               string
+	DueAt              time.Time
+	State              string
+	Attempts           int16
+	ClaimedAt          *time.Time
+	SentAt             *time.Time
+	LastErrorCode      *string
+	CreatedAt          time.Time
+	OfferID            *string
+	ReferenceID        *string
+	PaymentExceptionID *string
+	AutoRetries        int32
 }
 
 type OauthState struct {
@@ -404,6 +460,7 @@ type ProviderEvent struct {
 	MinimalPayload     []byte
 	NextAttemptAt      time.Time
 	ClaimedAt          *time.Time
+	AutoRetries        int32
 }
 
 type ProviderFeeSchedule struct {
@@ -417,6 +474,30 @@ type ProviderFeeSchedule struct {
 	EffectiveFrom time.Time
 	ApprovedAt    *time.Time
 	ApprovedBy    *string
+}
+
+type PushOutbox struct {
+	ID        string
+	EventKey  string
+	UserID    string
+	BookingID string
+	Kind      string
+	State     string
+	Attempts  int32
+	DueAt     time.Time
+	CreatedAt time.Time
+	SentAt    *time.Time
+}
+
+type PushSubscription struct {
+	ID            string
+	UserID        string
+	Endpoint      string
+	P256dh        string
+	Auth          string
+	CreatedAt     time.Time
+	LastSuccessAt *time.Time
+	Failures      int32
 }
 
 type Quote struct {
@@ -439,7 +520,7 @@ type Quote struct {
 
 type Refund struct {
 	ID                 string
-	BookingID          string
+	BookingID          *string
 	PaymentAttemptID   *string
 	AmountMinor        int64
 	Currency           string
@@ -459,6 +540,8 @@ type Refund struct {
 	ProcessedAt        *time.Time
 	UpdatedAt          time.Time
 	SellerLiability    string
+	PaymentExceptionID *string
+	AutoRetries        int32
 }
 
 type RescheduleEvent struct {
@@ -526,6 +609,7 @@ type SellerPayout struct {
 	PaidAt               *time.Time
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
+	DestinationType      string
 }
 
 type SellerPayoutAccount struct {
@@ -542,6 +626,7 @@ type SellerPayoutAccount struct {
 	VerifiedAt         time.Time
 	UsableFrom         time.Time
 	UpdatedAt          time.Time
+	DestinationType    string
 }
 
 type SellerProfile struct {
@@ -562,8 +647,11 @@ type SellerProfile struct {
 	AvatarData           []byte
 	AvatarVersion        int64
 	PublicVersion        int64
-	CancellationPolicy   string
 	AvatarKey            *string
+	Country              string
+	Currency             string
+	HandleChangedAt      *time.Time
+	HandleReminderDue    *time.Time
 }
 
 type SellerRecovery struct {

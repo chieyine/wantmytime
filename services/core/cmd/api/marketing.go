@@ -22,7 +22,7 @@ import (
 // every consent, so a later change of wording never rewrites what someone saw.
 const marketingWording = "Send me news and offers. Unsubscribe any time."
 
-var marketingSources = map[string]bool{"seller_signup": true, "booking": true, "offer": true, "settings": true}
+var marketingSources = map[string]bool{"seller_signup": true, "booking": true, "offer": true, "settings": true, "dashboard": true}
 
 type dbExecQuerier interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
@@ -86,7 +86,15 @@ func (a *API) myMarketing(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "DATABASE_ERROR", "Your email preferences could not be loaded.")
 		return
 	}
-	jsonOut(w, 200, map[string]any{"subscribed": subscribed, "confirmed": confirmed != nil, "wording": marketingWording})
+	// Ask on the dashboard only once, and never someone who already said no
+	// in Settings, unsubscribed from an email or was imported as unsubscribed.
+	ask := false
+	if !subscribed {
+		if err = a.db.QueryRow(r.Context(), `SELECT NOT EXISTS(SELECT 1 FROM marketing_consent_events WHERE email=$1 AND source IN ('dashboard','settings','unsubscribe_link','ops_import'))`, strings.ToLower(u.Email)).Scan(&ask); err != nil {
+			ask = false
+		}
+	}
+	jsonOut(w, 200, map[string]any{"subscribed": subscribed, "confirmed": confirmed != nil, "wording": marketingWording, "ask": ask})
 }
 
 func (a *API) setMyMarketing(w http.ResponseWriter, r *http.Request) {

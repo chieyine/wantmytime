@@ -231,7 +231,7 @@ SELECT n.kind, b.id AS booking_id, identity.normalized_identifier AS recipient_e
        b.state AS booking_state, b.payment_state, b.starts_at, b.duration_minutes, b.meeting_url, b.gross_minor, b.currency, b.calendar_sequence,
        COALESCE(pa.seller_entitlement_minor, 0)::bigint AS seller_entitlement_minor, (pa.id IS NOT NULL)::boolean AS has_allocation,
        rr.proposed_starts_at AS reschedule_starts_at, rr.expires_at AS reschedule_expires_at, COALESCE(rr.state, '')::text AS reschedule_state,
-       b.cancellation_policy, COALESCE(b.cancelled_by_role, '')::text AS cancelled_by_role,
+       COALESCE(b.cancelled_by_role, '')::text AS cancelled_by_role,
        COALESCE(rf.amount_minor, 0)::bigint AS refund_minor, COALESCE(rf.seller_share_minor, 0)::bigint AS refund_seller_share_minor, COALESCE(rf.state, '')::text AS refund_state, COALESCE(rf.seller_liability, '')::text AS refund_seller_liability,
        COALESCE(ns.absent_role, '')::text AS no_show_absent_role, COALESCE(ns.state, '')::text AS no_show_state, ns.resolves_at AS no_show_resolves_at,
        COALESCE(rv.rating, 0)::int AS review_rating, COALESCE(rv.body, '')::text AS review_body,
@@ -281,7 +281,6 @@ type NotificationContextRow struct {
 	RescheduleStartsAt     *time.Time
 	RescheduleExpiresAt    *time.Time
 	RescheduleState        string
-	CancellationPolicy     string
 	CancelledByRole        string
 	RefundMinor            int64
 	RefundSellerShareMinor int64
@@ -329,7 +328,6 @@ func (q *Queries) NotificationContext(ctx context.Context, id string) (Notificat
 		&i.RescheduleStartsAt,
 		&i.RescheduleExpiresAt,
 		&i.RescheduleState,
-		&i.CancellationPolicy,
 		&i.CancelledByRole,
 		&i.RefundMinor,
 		&i.RefundSellerShareMinor,

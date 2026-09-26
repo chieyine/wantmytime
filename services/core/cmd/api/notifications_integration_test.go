@@ -192,7 +192,7 @@ func TestRescheduleAndCancellationRequestsEmailTheOtherPerson(t *testing.T) {
 
 func TestOfferEventsAreEmailed(t *testing.T) {
 	h := newHarness(t)
-	s := h.newSeller("offer")
+	s := h.newSeller("both")
 	buyer := h.client(unique("b") + "@buyer.test")
 	buyer.signIn("guest_offer")
 	offer := buyer.expect(201, "POST", "/api/v1/offers", map[string]any{"seller": s.handle, "name": "Tunde", "duration_minutes": 30, "amount_minor": 500000}, "Idempotency-Key", idempotencyKey())
@@ -212,7 +212,7 @@ func TestOfferEventsAreEmailed(t *testing.T) {
 
 func TestStaleNotificationsAreCancelledNotSent(t *testing.T) {
 	h := newHarness(t)
-	s := h.newSeller("offer")
+	s := h.newSeller("both")
 	buyer := h.client(unique("b") + "@buyer.test")
 	buyer.signIn("guest_offer")
 	offer := buyer.expect(201, "POST", "/api/v1/offers", map[string]any{"seller": s.handle, "name": "Kemi", "duration_minutes": 30, "amount_minor": 400000}, "Idempotency-Key", idempotencyKey())

@@ -56,7 +56,6 @@
 		>{#if message}<p class="notice notice-warning" role="alert">{message}</p>{/if}
 	</form>
 	<p class="form-note">
-		Booked someone and want to see your booking? <a class="text-link" href="/access">Find your booking</a>. New here?
-		<a class="text-link" href="/claim">Get your link</a>.
+		New here? <a class="text-link" href="/claim">Get your link</a>.
 	</p>
 </section>

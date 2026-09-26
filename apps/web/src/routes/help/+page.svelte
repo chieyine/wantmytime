@@ -60,8 +60,8 @@
 			<p>
 				About three hours after each call ends. We hold the payment until the call is over and the two hours the buyer
 				has to report a problem have passed, then send your share to the bank account or mobile money wallet you added
-				under Settings → Payouts. Most banks show it within minutes. If a transfer ever fails, fix your details and we
-				send it again automatically.
+				under Money. Most banks show it within minutes. If a transfer ever fails, fix your details and we send it again
+				automatically.
 			</p>
 		</details>
 		<details>
@@ -104,8 +104,9 @@
 			<summary>What if I need to cancel or move a booking?</summary>
 			<p>
 				Either of you can suggest a new time from the booking page; nothing changes until the other person accepts. If
-				you cancel, the buyer gets everything back. If they cancel, your cancellation policy decides the refund. A buyer
-				with a good reason can ask you for a full refund instead; it’s your call, and saying yes is one tap.
+				you cancel, the buyer gets everything back. If they cancel at least 24 hours before, they get their money back;
+				after that, they don’t. A buyer with a good reason can ask you for a full refund instead; it’s your call, and
+				saying yes is one tap.
 			</p>
 		</details>
 		<details>

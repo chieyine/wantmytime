@@ -2,6 +2,11 @@
 	import PageMeta from '$lib/components/PageMeta.svelte';
 	import { onMount } from 'svelte';
 	import TimeDial from '$lib/components/TimeDial.svelte';
+	import { formatMoney, parseMoneyToMinor } from '$lib/money';
+	// Pricing lives here now: one number, and what you keep.
+	let gross = $state('10000');
+	let grossMinor = $derived(Number(parseMoneyToMinor(gross) ?? 0n));
+	let fee = $derived(Math.floor((grossMinor * 500) / 10000));
 	let handle = $state('');
 	let handleError = $state('');
 	let duration = $state(30);
@@ -137,6 +142,36 @@
 			</article>
 		</div>
 	</section>
+	<section class="brand-pricing" id="pricing" aria-labelledby="pricing-title">
+		<p class="brand-pricing-kicker">PRICING</p>
+		<div class="brand-pricing-grid">
+			<div>
+				<h2 id="pricing-title">5%. That’s it.</h2>
+				<p>
+					No subscription, no setup fee. When someone pays for your time, we keep 5% and send you the rest, about three
+					hours after the call. If nobody books, you pay nothing.
+				</p>
+				<ul>
+					<li>Buyers pay before the call, by bank transfer, pay with bank or mobile money.</li>
+					<li>
+						If they cancel at least 24 hours before, they get their money back. If you cancel, they get it all back.
+					</li>
+					<li>People can book from anywhere and see your times in their own timezone.</li>
+				</ul>
+			</div>
+			<div class="calculator">
+				<label
+					>They pay you
+					<div class="money-input">
+						<span>₦</span><input bind:value={gross} inputmode="decimal" aria-label="Booking price in naira" />
+					</div></label
+				>
+				<div><span>We keep (5%)</span><strong>{formatMoney(fee, 'NGN')}</strong></div>
+				<div><span>You get</span><strong>{formatMoney(grossMinor - fee, 'NGN')}</strong></div>
+				<small>Payment charges are paid by the person booking, not taken from your share.</small>
+			</div>
+		</div>
+	</section>
 	<section class="brand-fee">
 		<p>YOUR LINK / 60 SECONDS</p>
 		<div>
@@ -145,7 +180,7 @@
 				<p class="brand-fee-lead">Your time already has a price. Now people can pay it.</p>
 				<a class="brand-fee-cta" href="/claim">CLAIM YOUR LINK <span aria-hidden="true">↗</span></a>
 				<p>
-					Free to set up. We keep 5% of each paid booking and nothing else. <a href="/pricing">How pricing works</a>
+					Free to set up. We keep 5% of each paid booking and nothing else. <a href="#pricing">How pricing works</a>
 				</p>
 			</div>
 		</div>

@@ -179,7 +179,7 @@ func (q *Queries) InsertSellerRecovery(ctx context.Context, arg InsertSellerReco
 
 const lockBookingForCancellation = `-- name: LockBookingForCancellation :one
 SELECT b.id::text AS booking_id, b.state, b.payment_state, b.starts_at, b.created_at, b.duration_minutes, b.gross_minor, b.currency,
-       b.buyer_user_id::text AS buyer_user_id, sp.user_id::text AS seller_user_id, sp.id::text AS seller_id, b.cancellation_policy,
+       b.buyer_user_id::text AS buyer_user_id, sp.user_id::text AS seller_user_id, sp.id::text AS seller_id,
        COALESCE(pa.deduction_minor, 0)::bigint AS deduction_minor,
        COALESCE(att.id::text, '')::text AS payment_attempt_id,
        COALESCE(att.buyer_fee_minor, 0)::bigint AS buyer_fee_minor
@@ -192,21 +192,20 @@ FOR UPDATE OF b
 `
 
 type LockBookingForCancellationRow struct {
-	BookingID          string
-	State              string
-	PaymentState       string
-	StartsAt           time.Time
-	CreatedAt          time.Time
-	DurationMinutes    int32
-	GrossMinor         int64
-	Currency           string
-	BuyerUserID        string
-	SellerUserID       string
-	SellerID           string
-	CancellationPolicy string
-	DeductionMinor     int64
-	PaymentAttemptID   string
-	BuyerFeeMinor      int64
+	BookingID        string
+	State            string
+	PaymentState     string
+	StartsAt         time.Time
+	CreatedAt        time.Time
+	DurationMinutes  int32
+	GrossMinor       int64
+	Currency         string
+	BuyerUserID      string
+	SellerUserID     string
+	SellerID         string
+	DeductionMinor   int64
+	PaymentAttemptID string
+	BuyerFeeMinor    int64
 }
 
 func (q *Queries) LockBookingForCancellation(ctx context.Context, bookingID string) (LockBookingForCancellationRow, error) {
@@ -224,7 +223,6 @@ func (q *Queries) LockBookingForCancellation(ctx context.Context, bookingID stri
 		&i.BuyerUserID,
 		&i.SellerUserID,
 		&i.SellerID,
-		&i.CancellationPolicy,
 		&i.DeductionMinor,
 		&i.PaymentAttemptID,
 		&i.BuyerFeeMinor,

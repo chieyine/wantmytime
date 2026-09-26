@@ -46,6 +46,8 @@ export default async function globalSetup() {
 		OTP_PEPPER: 'e2e-only-otp-pepper-0123456789abcdef',
 		ALLOW_LOG_OTP: 'true',
 		LOCAL_PAYMENT_SIMULATOR: 'true',
+		// Every test signs people up from this one address.
+		LOCAL_RATE_LIMIT_SCALE: '10',
 		PUBLIC_APP_ORIGIN: `http://127.0.0.1:${webPort}`,
 		REDIS_URL: ''
 	};

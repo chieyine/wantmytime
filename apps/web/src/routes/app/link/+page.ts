@@ -5,7 +5,7 @@ export type Profile = {
 	handle: string;
 	name: string;
 	identity_url: string;
-	mode: 'fixed' | 'offer' | 'both';
+	mode: 'fixed' | 'both';
 	base_30_minor: number;
 	durations: number[];
 	timezone: string;
@@ -13,6 +13,7 @@ export type Profile = {
 	ready: boolean;
 	avatar_version?: number;
 	currency?: string;
+	next_handle_change_at?: string;
 };
 
 export const load: PageLoad = async ({ fetch }) => {
