@@ -3,7 +3,10 @@ import { error, isRedirect, redirect } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async ({ params, fetch, url }) => {
+export const load: PageServerLoad = async ({ params, fetch, url, setHeaders }) => {
+	setHeaders({
+		'cache-control': 'public, max-age=15, stale-while-revalidate=60'
+	});
 	const apiBase = env.API_INTERNAL_BASE || 'http://127.0.0.1:8081';
 	const publicOrigin = env.PUBLIC_APP_ORIGIN ? configuredSiteOrigin() : url.origin;
 	try {

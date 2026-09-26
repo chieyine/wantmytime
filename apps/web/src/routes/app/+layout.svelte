@@ -35,13 +35,14 @@
 		<div class="workspace-rail-head">
 			<a class="workspace-brand" href="/">WantMyTime<span>.</span></a><span>YOUR SPACE</span>
 		</div>
-		<nav aria-label="Workspace" data-sveltekit-preload-data="hover">
+		<nav aria-label="Workspace" data-sveltekit-preload-data="hover" data-sveltekit-preload-code="eager">
 			{#each navigation as item (item.href)}
 				<a
 					href={item.href}
 					class:active={current(item)}
 					aria-current={current(item) ? 'page' : undefined}
-					data-sveltekit-preload-data="tap"
+					data-sveltekit-preload-data="hover"
+					data-sveltekit-preload-code="eager"
 					><small>{item.number}</small><span>{item.label}</span><span aria-hidden="true">↗</span></a
 				>
 			{/each}
@@ -51,7 +52,8 @@
 				href="/app/settings"
 				class:active={inSettings}
 				aria-current={inSettings ? 'page' : undefined}
-				data-sveltekit-preload-data="tap">SETTINGS <span aria-hidden="true">↗</span></a
+				data-sveltekit-preload-data="hover"
+				data-sveltekit-preload-code="eager">SETTINGS <span aria-hidden="true">↗</span></a
 			><button type="button" onclick={signOut}>SIGN OUT <span aria-hidden="true">↗</span></button>{#if signOutError}<p
 					role="alert"
 				>

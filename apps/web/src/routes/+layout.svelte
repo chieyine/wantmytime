@@ -3,7 +3,18 @@
 	import Header from '$lib/components/Header.svelte';
 	import Footer from '$lib/components/Footer.svelte';
 	import { page, navigating } from '$app/state';
+	import { onNavigate } from '$app/navigation';
 	let { children } = $props();
+
+	onNavigate((navigation) => {
+		if (!document.startViewTransition) return;
+		return new Promise((resolve) => {
+			document.startViewTransition(async () => {
+				resolve();
+				await navigation.complete;
+			});
+		});
+	});
 </script>
 
 {#if navigating.to}

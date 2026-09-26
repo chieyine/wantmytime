@@ -3734,10 +3734,10 @@ body:has(.workspace) {
 .workspace-link-panel {
 	padding: 34px 0 42px;
 	border-bottom: 1px solid #171817;
-	display: grid;
-	grid-template-columns: minmax(0, 1fr) auto;
-	gap: 35px;
-	align-items: end;
+	display: flex;
+	flex-direction: column;
+	gap: 22px;
+	align-items: flex-start;
 }
 .workspace-link-panel h2 {
 	font-size: clamp(23px, 3.3vw, 44px);
@@ -3745,12 +3745,13 @@ body:has(.workspace) {
 	letter-spacing: -0.065em;
 	line-height: 1.05;
 	overflow-wrap: anywhere;
-	margin: 22px 0 0;
+	margin: 16px 0 0;
 }
 .workspace-link-actions {
 	display: flex;
-	gap: 7px;
+	gap: 10px;
 	flex-wrap: wrap;
+	align-items: center;
 }
 .workspace-action {
 	min-height: 50px;
@@ -4261,15 +4262,16 @@ body:has(.workspace) {
 		font-size: 15px;
 	}
 	.workspace-link-panel {
-		grid-template-columns: 1fr;
-		gap: 25px;
+		gap: 20px;
 	}
 	.workspace-link-actions {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		width: 100%;
 	}
-	.workspace-link-actions .workspace-action:only-child {
-		grid-column: 1/-1;
+	.workspace-link-actions .workspace-action {
+		flex: 1 1 auto;
 	}
 	.workspace-overview-grid {
 		grid-template-columns: 1fr;
