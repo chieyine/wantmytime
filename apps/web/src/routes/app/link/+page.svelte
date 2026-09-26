@@ -47,6 +47,8 @@
 			: ''
 	);
 	let saveState = $state<'idle' | 'saved' | 'error'>('idle');
+	let justSaved = $state(false);
+	let saveTimer: ReturnType<typeof setTimeout> | null = null;
 	let fingerprint = $derived(
 		JSON.stringify({
 			name,
@@ -161,7 +163,6 @@
 		durations = durations.includes(d) ? durations.filter((x) => x !== d) : [...durations, d].sort((a, b) => a - b);
 	}
 	async function save() {
-		if (!dirty) return;
 		saving = true;
 		message = '';
 		const submittedFingerprint = fingerprint;
@@ -179,7 +180,12 @@
 			await api('/api/v1/me/link', { method: 'PATCH', body: JSON.stringify(payload) });
 			savedFingerprint = submittedFingerprint;
 			saveState = 'saved';
+			justSaved = true;
 			message = 'Your changes are saved.';
+			if (saveTimer) clearTimeout(saveTimer);
+			saveTimer = setTimeout(() => {
+				justSaved = false;
+			}, 3500);
 		} catch (error) {
 			saveState = 'error';
 			message = error instanceof Error ? error.message : 'Your changes could not be saved.';
@@ -200,12 +206,15 @@
 			return;
 		}
 		avatarBusy = true;
+		const previousPreview = avatarPreview;
+		// Optimistic instant preview: show chosen image immediately with zero lag!
+		const localUrl = URL.createObjectURL(file);
+		avatarPreview = localUrl;
+		avatarMessage = 'Saving photo…';
 		try {
-			avatarMessage = 'Optimizing image…';
 			const optimized = await optimizeImageForAvatar(file, 320);
 			const data = new FormData();
 			data.append('avatar', optimized);
-			avatarMessage = 'Uploading…';
 			const response = await fetch('/api/v1/me/avatar', { method: 'PUT', body: data });
 			let body: Record<string, any> | null = null;
 			try {
@@ -217,10 +226,13 @@
 				throw new Error(body?.error?.message || body?.message || 'The image could not be saved.');
 			}
 			if (body) {
+				URL.revokeObjectURL(localUrl);
 				avatarPreview = `${body.url}?v=${body.avatar_version}`;
-				avatarMessage = 'Profile image saved.';
+				avatarMessage = 'Profile photo saved ✓';
 			}
 		} catch (e) {
+			URL.revokeObjectURL(localUrl);
+			avatarPreview = previousPreview;
 			avatarMessage = e instanceof Error ? e.message : 'The image could not be saved.';
 		} finally {
 			avatarBusy = false;
@@ -398,12 +410,33 @@
 					Paused means your page stays up but nobody can book. Bookings you already have stay in place.
 				</div>
 				<div class="link-editor-save">
-					<span>{dirty ? 'YOUR PUBLIC PAGE HAS NOT CHANGED YET' : 'YOUR PUBLIC PAGE MATCHES THIS EDITOR'}</span><button
+					<span class="save-status-label">
+						{#if saving}
+							SAVING CHANGES…
+						{:else if justSaved}
+							<span class="status-dot green"></span> UPDATED · CHANGES ARE LIVE
+						{:else if dirty}
+							<span class="status-dot amber"></span> UNSAVED CHANGES
+						{:else}
+							<span class="status-dot green"></span> YOUR PUBLIC PAGE MATCHES THIS EDITOR
+						{/if}
+					</span>
+					<button
 						class="button"
 						type="submit"
-						disabled={saving || !dirty || durations.length === 0}
-						>{saving ? 'Saving…' : 'Save changes'} <span>↗</span></button
+						class:button-saved={justSaved}
+						disabled={saving || durations.length === 0}
 					>
+						{#if saving}
+							Saving…
+						{:else if justSaved}
+							Updated ✓
+						{:else if !dirty && saveState === 'saved'}
+							Saved ✓
+						{:else}
+							Save changes <span>↗</span>
+						{/if}
+					</button>
 				</div>
 				{#if message && (!dirty || saveState === 'error')}<p
 						class:notice-warning={saveState === 'error'}

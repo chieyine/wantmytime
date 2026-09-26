@@ -4634,6 +4634,32 @@ body:has(.workspace) {
 	letter-spacing: 0.07em;
 	color: #666a63;
 }
+.save-status-label {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+}
+.status-dot {
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	display: inline-block;
+	flex-shrink: 0;
+}
+.status-dot.green {
+	background: #1b7340;
+	box-shadow: 0 0 0 2px rgba(27, 115, 64, 0.2);
+}
+.status-dot.amber {
+	background: #c26100;
+	box-shadow: 0 0 0 2px rgba(194, 97, 0, 0.2);
+}
+.button.button-saved {
+	background: #1b7340 !important;
+	border-color: #1b7340 !important;
+	color: #ffffff !important;
+	transition: background 0.2s ease, border-color 0.2s ease;
+}
 .link-editor-preview-head {
 	display: flex;
 	justify-content: space-between;
