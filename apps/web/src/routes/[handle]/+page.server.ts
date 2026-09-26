@@ -7,7 +7,18 @@ export const load: PageServerLoad = async ({ params, fetch, url }) => {
 	const publicOrigin = env.PUBLIC_APP_ORIGIN || url.origin;
 	try {
 		const response = await fetch(`${apiBase}/api/v1/people/${encodeURIComponent(params.handle)}`);
-		if (!response.ok) throw error(response.status as 404, 'This link is not available.');
+		if (response.status === 404) error(404, 'This link is not available.');
+		if (!response.ok) {
+			console.error(
+				JSON.stringify({
+					level: 'ERROR',
+					msg: 'public page load failed',
+					status: response.status,
+					server: response.headers.get('server')
+				})
+			);
+			error(503, 'We could not load this link. Please try again.');
+		}
 		const person = await response.json();
 		// An old link (or odd capitals) lands on the one address search engines and people should keep.
 		if (person.handle && person.handle !== params.handle) redirect(301, `/${person.handle}${url.search}`);
